@@ -5,6 +5,20 @@ const fs = require('fs');
 let settingsWindow = null;
 let overlayWindow = null;
 let hookInitialized = false;
+let isSettingsFocused = false;
+let isSettingsHovered = false;
+
+function updateSettingsState() {
+  const isSettingsActive = isSettingsFocused || isSettingsHovered;
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    overlayWindow.webContents.send('settings-state-changed', isSettingsActive);
+    
+    // 設定画面がアクティブな場合は、マウス透過を強制する（操作を妨げないため）
+    const isAreaSelecting = config.areaSpotlight && config.areaSpotlight.enabled && !config.areaSpotlight.rect;
+    const ignoreMouse = isSettingsActive || (!config.pen.enabled && !isAreaSelecting);
+    overlayWindow.setIgnoreMouseEvents(ignoreMouse, { forward: ignoreMouse });
+  }
+}
 
 // 設定ファイルの保存パス
 const configPath = path.join(app.getPath('userData'), 'config.json');
@@ -16,6 +30,13 @@ const defaultConfig = {
     enabled: false,
     radius: 120,
     opacity: 0.6
+  },
+  areaSpotlight: {
+    enabled: false,
+    rect: null,
+    opacity: 0.6,
+    borderColor: '#3b82f6',
+    borderWidth: 2
   },
   laser: {
     enabled: false,
@@ -43,7 +64,10 @@ const defaultConfig = {
     toggleSpotlight: 'CommandOrControl+Shift+S',
     toggleLaser: 'CommandOrControl+Shift+L',
     togglePen: 'CommandOrControl+Shift+P',
-    clearDrawing: 'CommandOrControl+Shift+C'
+    clearDrawing: 'CommandOrControl+Shift+C',
+    toggleAreaSpotlight: 'CommandOrControl+Shift+A',
+    undoDrawing: 'CommandOrControl+Shift+Z',
+    redoDrawing: 'CommandOrControl+Shift+Y'
   }
 };
 
@@ -54,8 +78,18 @@ function loadConfig() {
   try {
     if (fs.existsSync(configPath)) {
       const data = fs.readFileSync(configPath, 'utf8');
-      config = JSON.parse(data);
-      config = { ...defaultConfig, ...config }; // 新規項目とのマージ
+      const loadedConfig = JSON.parse(data);
+      config = {
+        ...defaultConfig,
+        ...loadedConfig,
+        spotlight: { ...defaultConfig.spotlight, ...loadedConfig.spotlight },
+        areaSpotlight: { ...defaultConfig.areaSpotlight, ...loadedConfig.areaSpotlight },
+        laser: { ...defaultConfig.laser, ...loadedConfig.laser },
+        ripple: { ...defaultConfig.ripple, ...loadedConfig.ripple },
+        pen: { ...defaultConfig.pen, ...loadedConfig.pen },
+        keycast: { ...defaultConfig.keycast, ...loadedConfig.keycast },
+        shortcuts: { ...defaultConfig.shortcuts, ...loadedConfig.shortcuts }
+      };
     }
   } catch (err) {
     console.error('設定のロードに失敗しました:', err);
@@ -94,8 +128,20 @@ function createSettingsWindow() {
     settingsWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 
+  settingsWindow.on('focus', () => {
+    isSettingsFocused = true;
+    updateSettingsState();
+  });
+
+  settingsWindow.on('blur', () => {
+    isSettingsFocused = false;
+    updateSettingsState();
+  });
+
   settingsWindow.on('closed', () => {
     settingsWindow = null;
+    isSettingsFocused = false;
+    updateSettingsState();
     if (process.platform !== 'darwin') {
       app.quit();
     }
@@ -222,6 +268,24 @@ function registerShortcuts() {
     }
   }
 
+  // エリアスポットライト切り替え
+  if (config.shortcuts.toggleAreaSpotlight) {
+    try {
+      globalShortcut.register(config.shortcuts.toggleAreaSpotlight, () => {
+        if (config.areaSpotlight.enabled) {
+          config.areaSpotlight.enabled = false;
+          config.areaSpotlight.rect = null;
+        } else {
+          config.areaSpotlight.enabled = true;
+          config.areaSpotlight.rect = null;
+        }
+        notifyConfigUpdate();
+      });
+    } catch (e) {
+      console.error(`ショートカットの登録に失敗しました: ${config.shortcuts.toggleAreaSpotlight}`, e);
+    }
+  }
+
   // レーザーポインター切り替え
   if (config.shortcuts.toggleLaser) {
     try {
@@ -246,12 +310,12 @@ function registerShortcuts() {
     }
   }
 
-  // 手書きのクリア
+  // 手書きのクリア (全消去)
   if (config.shortcuts.clearDrawing) {
     try {
       globalShortcut.register(config.shortcuts.clearDrawing, () => {
         if (overlayWindow && !overlayWindow.isDestroyed()) {
-          overlayWindow.webContents.send('clear-drawing');
+          overlayWindow.webContents.send('clear-drawing', true);
         }
       });
     } catch (e) {
@@ -259,7 +323,31 @@ function registerShortcuts() {
     }
   }
 
+  // 手書きのアンドゥ (戻る)
+  if (config.shortcuts.undoDrawing) {
+    try {
+      globalShortcut.register(config.shortcuts.undoDrawing, () => {
+        if (overlayWindow && !overlayWindow.isDestroyed()) {
+          overlayWindow.webContents.send('undo-drawing');
+        }
+      });
+    } catch (e) {
+      console.error(`ショートカットの登録に失敗しました: ${config.shortcuts.undoDrawing}`, e);
+    }
+  }
 
+  // 手書きのリドゥ (やり直し)
+  if (config.shortcuts.redoDrawing) {
+    try {
+      globalShortcut.register(config.shortcuts.redoDrawing, () => {
+        if (overlayWindow && !overlayWindow.isDestroyed()) {
+          overlayWindow.webContents.send('redo-drawing');
+        }
+      });
+    } catch (e) {
+      console.error(`ショートカットの登録に失敗しました: ${config.shortcuts.redoDrawing}`, e);
+    }
+  }
 }
 
 // 設定変更の通知
@@ -271,8 +359,10 @@ function notifyConfigUpdate() {
   if (overlayWindow && !overlayWindow.isDestroyed()) {
     overlayWindow.webContents.send('config-updated', config);
     
-    // ペンモードが有効な場合はクリックをキャプチャし、無効なら透過する
-    const ignoreMouse = !config.pen.enabled;
+    // 設定画面がアクティブ（フォーカス中、またはホバー中）なら完全に透過する
+    const isSettingsActive = isSettingsFocused || isSettingsHovered;
+    const isAreaSelecting = config.areaSpotlight && config.areaSpotlight.enabled && !config.areaSpotlight.rect;
+    const ignoreMouse = isSettingsActive || (!config.pen.enabled && !isAreaSelecting);
     overlayWindow.setIgnoreMouseEvents(ignoreMouse, { forward: ignoreMouse });
   }
 }
@@ -291,6 +381,11 @@ app.whenReady().then(() => {
     return config;
   });
 
+  ipcMain.on('set-settings-hover', (event, isHovered) => {
+    isSettingsHovered = isHovered;
+    updateSettingsState();
+  });
+
   ipcMain.on('update-config', (event, newConfig) => {
     config = { ...config, ...newConfig };
     notifyConfigUpdate();
@@ -305,9 +400,21 @@ app.whenReady().then(() => {
     }
   });
 
-  ipcMain.on('trigger-clear-drawing', () => {
+  ipcMain.on('trigger-clear-drawing', (event, all) => {
     if (overlayWindow && !overlayWindow.isDestroyed()) {
-      overlayWindow.webContents.send('clear-drawing');
+      overlayWindow.webContents.send('clear-drawing', all);
+    }
+  });
+
+  ipcMain.on('trigger-undo-drawing', () => {
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.webContents.send('undo-drawing');
+    }
+  });
+
+  ipcMain.on('trigger-redo-drawing', () => {
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.webContents.send('redo-drawing');
     }
   });
 

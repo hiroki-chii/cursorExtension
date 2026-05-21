@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { 
-  Sun, Moon, Monitor, Sparkles, Sliders, Trash2, 
-  MousePointer, Zap, Edit3, Keyboard, Info, Check, HelpCircle
+  Sun, Moon, Monitor, Sparkles, Sliders, Trash2, Undo, Redo,
+  MousePointer, Zap, Edit3, Keyboard, Info, Check, HelpCircle,
+  BoxSelect
 } from 'lucide-react';
 import { useTheme } from '../components/ThemeProvider';
 
@@ -57,9 +58,21 @@ export default function App() {
     }
   };
 
-  const handleClearDrawing = () => {
+  const handleUndoDrawing = () => {
     if (window.electronAPI) {
-      window.electronAPI.triggerClearDrawing();
+      window.electronAPI.triggerUndoDrawing();
+    }
+  };
+
+  const handleRedoDrawing = () => {
+    if (window.electronAPI) {
+      window.electronAPI.triggerRedoDrawing();
+    }
+  };
+
+  const handleClearAllDrawing = () => {
+    if (window.electronAPI) {
+      window.electronAPI.triggerClearDrawing(true);
     }
   };
 
@@ -90,7 +103,11 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-slate-100/50 to-slate-200/30 text-slate-900 transition-colors duration-200 dark:from-slate-950 dark:via-slate-900/50 dark:to-slate-950 dark:text-slate-50 flex flex-col h-screen overflow-hidden">
+    <div 
+      onMouseEnter={() => window.electronAPI && window.electronAPI.setSettingsHover(true)}
+      onMouseLeave={() => window.electronAPI && window.electronAPI.setSettingsHover(false)}
+      className="min-h-screen bg-gradient-to-br from-slate-50 via-slate-100/50 to-slate-200/30 text-slate-900 transition-colors duration-200 dark:from-slate-950 dark:via-slate-900/50 dark:to-slate-950 dark:text-slate-50 flex flex-col h-screen overflow-hidden"
+    >
       
       {/* ヘッダー */}
       <header className="px-6 py-4 bg-white/70 dark:bg-slate-900/70 border-b border-slate-200/50 dark:border-slate-800/50 backdrop-blur-md flex items-center justify-between flex-shrink-0">
@@ -192,35 +209,133 @@ export default function App() {
                 />
               </div>
 
-              {config.spotlight.enabled && (
-                <div className="space-y-4 pt-2 border-t border-slate-100 dark:border-slate-800 animate-fadeIn">
-                  <div>
-                    <div className="flex justify-between text-xs mb-1 font-medium text-slate-600 dark:text-slate-300">
-                      <span>スポットライトの半径</span>
-                      <span>{config.spotlight.radius} px</span>
-                    </div>
-                    <input 
-                      type="range" min="50" max="300" step="5"
-                      value={config.spotlight.radius}
-                      onChange={(e) => updateConfig('spotlight', { radius: parseInt(e.target.value) })}
-                      className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-600"
-                    />
+              <div className="space-y-4 pt-2 border-t border-slate-100 dark:border-slate-800 animate-fadeIn">
+                <div>
+                  <div className="flex justify-between text-xs mb-1 font-medium text-slate-600 dark:text-slate-300">
+                    <span>スポットライトの半径</span>
+                    <span>{config.spotlight.radius} px</span>
                   </div>
+                  <input 
+                    type="range" min="50" max="300" step="5"
+                    value={config.spotlight.radius}
+                    onChange={(e) => updateConfig('spotlight', { radius: parseInt(e.target.value) })}
+                    className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                  />
+                </div>
 
+                <div>
+                  <div className="flex justify-between text-xs mb-1 font-medium text-slate-600 dark:text-slate-300">
+                    <span>背景の不透明度（暗さ）</span>
+                    <span>{Math.round(config.spotlight.opacity * 100)} %</span>
+                  </div>
+                  <input 
+                    type="range" min="0.1" max="0.9" step="0.05"
+                    value={config.spotlight.opacity}
+                    onChange={(e) => updateConfig('spotlight', { opacity: parseFloat(e.target.value) })}
+                    className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* エリアスポットライト（矩形）設定 */}
+            <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-indigo-100 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-xl">
+                    <BoxSelect className="h-5 w-5" />
+                  </div>
                   <div>
-                    <div className="flex justify-between text-xs mb-1 font-medium text-slate-600 dark:text-slate-300">
-                      <span>背景の不透明度（暗さ）</span>
-                      <span>{Math.round(config.spotlight.opacity * 100)} %</span>
+                    <h3 className="font-bold text-slate-800 dark:text-slate-100">エリアスポットライト</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">画面上の選択した矩形領域をハイライトします</p>
+                  </div>
+                </div>
+                <Switch 
+                  checked={config.areaSpotlight?.enabled} 
+                  onChange={(val) => updateConfig('areaSpotlight', { enabled: val })} 
+                />
+              </div>
+
+              <div className="space-y-4 pt-2 border-t border-slate-100 dark:border-slate-800 animate-fadeIn">
+                {config.areaSpotlight?.enabled && !config.areaSpotlight.rect && (
+                  <div className="p-3 bg-indigo-50 dark:bg-indigo-950/20 text-indigo-800 dark:text-indigo-200 rounded-xl text-xs flex gap-2 items-start">
+                    <Info className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                    <div>
+                      画面が薄暗くなりました。マウスをドラッグして、ハイライトしたい四角形の領域を囲んでください。
+                      （Escキーで選択をキャンセル・解除できます）
                     </div>
+                  </div>
+                )}
+
+                {config.areaSpotlight?.enabled && config.areaSpotlight.rect && (
+                  <div className="p-3 bg-slate-50 dark:bg-slate-800/40 text-slate-700 dark:text-slate-350 rounded-xl text-xs flex gap-2 items-start justify-between">
+                    <div className="flex gap-2 items-start">
+                      <Check className="h-4 w-4 text-emerald-500 flex-shrink-0 mt-0.5" />
+                      <div>
+                        領域が設定されています。背面にあるアプリを通常通り操作できます。
+                        もう一度選択し直したい場合は、一度トグルをOFFにしてからONにするか、
+                        ショートカット（Ctrl + Shift + A）を押してください。
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => updateConfig('areaSpotlight', { rect: null })}
+                      className="text-xs text-indigo-500 hover:text-indigo-600 font-bold whitespace-nowrap"
+                    >
+                      再選択
+                    </button>
+                  </div>
+                )}
+
+                <div>
+                  <div className="flex justify-between text-xs mb-1 font-medium text-slate-600 dark:text-slate-300">
+                    <span>背景の不透明度（暗さ）</span>
+                    <span>{Math.round((config.areaSpotlight?.opacity || 0.6) * 100)} %</span>
+                  </div>
+                  <input 
+                    type="range" min="0.1" max="0.9" step="0.05"
+                    value={config.areaSpotlight?.opacity || 0.6}
+                    onChange={(e) => updateConfig('areaSpotlight', { opacity: parseFloat(e.target.value) })}
+                    className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                  />
+                </div>
+
+                <div>
+                  <span className="text-xs font-medium text-slate-600 dark:text-slate-300 block mb-2">枠線の色</span>
+                  <div className="flex flex-wrap gap-2 items-center">
+                    {PRESET_COLORS.map(color => (
+                      <button
+                        key={color}
+                        onClick={() => updateConfig('areaSpotlight', { borderColor: color })}
+                        style={{ backgroundColor: color }}
+                        className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${
+                          config.areaSpotlight?.borderColor === color ? 'ring-2 ring-indigo-500 dark:ring-indigo-400 scale-110 shadow-sm' : 'hover:scale-105'
+                        }`}
+                      >
+                        {config.areaSpotlight?.borderColor === color && <Check className="h-4 w-4 text-white drop-shadow-sm" />}
+                      </button>
+                    ))}
                     <input 
-                      type="range" min="0.1" max="0.9" step="0.05"
-                      value={config.spotlight.opacity}
-                      onChange={(e) => updateConfig('spotlight', { opacity: parseFloat(e.target.value) })}
-                      className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                      type="color" 
+                      value={config.areaSpotlight?.borderColor || '#3b82f6'}
+                      onChange={(e) => updateConfig('areaSpotlight', { borderColor: e.target.value })}
+                      className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0"
                     />
                   </div>
                 </div>
-              )}
+
+                <div>
+                  <div className="flex justify-between text-xs mb-1 font-medium text-slate-600 dark:text-slate-300">
+                    <span>枠線の太さ</span>
+                    <span>{config.areaSpotlight?.borderWidth || 2} px</span>
+                  </div>
+                  <input 
+                    type="range" min="0" max="8" step="1"
+                    value={config.areaSpotlight?.borderWidth || 2}
+                    onChange={(e) => updateConfig('areaSpotlight', { borderWidth: parseInt(e.target.value) })}
+                    className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                  />
+                </div>
+              </div>
             </div>
 
             {/* レーザーポインター設定 */}
@@ -241,62 +356,60 @@ export default function App() {
                 />
               </div>
 
-              {config.laser.enabled && (
-                <div className="space-y-4 pt-2 border-t border-slate-100 dark:border-slate-800">
-                  {/* カラー選択 */}
-                  <div>
-                    <span className="text-xs font-medium text-slate-600 dark:text-slate-300 block mb-2">カラー</span>
-                    <div className="flex flex-wrap gap-2 items-center">
-                      {PRESET_COLORS.map(color => (
-                        <button
-                          key={color}
-                          onClick={() => updateConfig('laser', { color })}
-                          style={{ backgroundColor: color }}
-                          className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${
-                            config.laser.color === color ? 'ring-2 ring-indigo-500 dark:ring-indigo-400 scale-110 shadow-sm' : 'hover:scale-105'
-                          }`}
-                        >
-                          {config.laser.color === color && <Check className="h-4 w-4 text-white drop-shadow-sm" />}
-                        </button>
-                      ))}
-                      <input 
-                        type="color" 
-                        value={config.laser.color}
-                        onChange={(e) => updateConfig('laser', { color: e.target.value })}
-                        className="w-8 h-8 rounded-lg border-0 p-0 cursor-pointer overflow-hidden bg-transparent"
-                      />
-                    </div>
-                  </div>
-
-                  {/* サイズスライダー */}
-                  <div>
-                    <div className="flex justify-between text-xs mb-1 font-medium text-slate-600 dark:text-slate-300">
-                      <span>ポインターのサイズ</span>
-                      <span>{config.laser.radius * 2} px</span>
-                    </div>
+              <div className="space-y-4 pt-2 border-t border-slate-100 dark:border-slate-800">
+                {/* カラー選択 */}
+                <div>
+                  <span className="text-xs font-medium text-slate-600 dark:text-slate-300 block mb-2">カラー</span>
+                  <div className="flex flex-wrap gap-2 items-center">
+                    {PRESET_COLORS.map(color => (
+                      <button
+                        key={color}
+                        onClick={() => updateConfig('laser', { color })}
+                        style={{ backgroundColor: color }}
+                        className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${
+                          config.laser.color === color ? 'ring-2 ring-indigo-500 dark:ring-indigo-400 scale-110 shadow-sm' : 'hover:scale-105'
+                        }`}
+                      >
+                        {config.laser.color === color && <Check className="h-4 w-4 text-white drop-shadow-sm" />}
+                      </button>
+                    ))}
                     <input 
-                      type="range" min="3" max="20" step="1"
-                      value={config.laser.radius}
-                      onChange={(e) => updateConfig('laser', { radius: parseInt(e.target.value) })}
-                      className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-600"
-                    />
-                  </div>
-
-                  {/* 軌跡の長さスライダー */}
-                  <div>
-                    <div className="flex justify-between text-xs mb-1 font-medium text-slate-600 dark:text-slate-300">
-                      <span>軌跡の長さ</span>
-                      <span>{config.laser.trailLength}</span>
-                    </div>
-                    <input 
-                      type="range" min="2" max="25" step="1"
-                      value={config.laser.trailLength}
-                      onChange={(e) => updateConfig('laser', { trailLength: parseInt(e.target.value) })}
-                      className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                      type="color" 
+                      value={config.laser.color}
+                      onChange={(e) => updateConfig('laser', { color: e.target.value })}
+                      className="w-8 h-8 rounded-lg border-0 p-0 cursor-pointer overflow-hidden bg-transparent"
                     />
                   </div>
                 </div>
-              )}
+
+                {/* サイズスライダー */}
+                <div>
+                  <div className="flex justify-between text-xs mb-1 font-medium text-slate-600 dark:text-slate-300">
+                    <span>ポインターのサイズ</span>
+                    <span>{config.laser.radius * 2} px</span>
+                  </div>
+                  <input 
+                    type="range" min="3" max="20" step="1"
+                    value={config.laser.radius}
+                    onChange={(e) => updateConfig('laser', { radius: parseInt(e.target.value) })}
+                    className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                  />
+                </div>
+
+                {/* 軌跡の長さスライダー */}
+                <div>
+                  <div className="flex justify-between text-xs mb-1 font-medium text-slate-600 dark:text-slate-300">
+                    <span>軌跡の長さ</span>
+                    <span>{config.laser.trailLength}</span>
+                  </div>
+                  <input 
+                    type="range" min="2" max="25" step="1"
+                    value={config.laser.trailLength}
+                    onChange={(e) => updateConfig('laser', { trailLength: parseInt(e.target.value) })}
+                    className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                  />
+                </div>
+              </div>
             </div>
 
             {/* クリックインジケーター設定 */}
@@ -317,62 +430,60 @@ export default function App() {
                 />
               </div>
 
-              {config.ripple.enabled && (
-                <div className="space-y-4 pt-2 border-t border-slate-100 dark:border-slate-800">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <span className="text-xs font-medium text-slate-600 dark:text-slate-300 block mb-1">左クリック色</span>
-                      <div className="flex gap-2 items-center">
-                        <input 
-                          type="color" 
-                          value={config.ripple.leftColor}
-                          onChange={(e) => updateConfig('ripple', { leftColor: e.target.value })}
-                          className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0"
-                        />
-                        <span className="text-xs font-mono text-slate-500">{config.ripple.leftColor}</span>
-                      </div>
-                    </div>
-                    <div>
-                      <span className="text-xs font-medium text-slate-600 dark:text-slate-300 block mb-1">右クリック色</span>
-                      <div className="flex gap-2 items-center">
-                        <input 
-                          type="color" 
-                          value={config.ripple.rightColor}
-                          onChange={(e) => updateConfig('ripple', { rightColor: e.target.value })}
-                          className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0"
-                        />
-                        <span className="text-xs font-mono text-slate-500">{config.ripple.rightColor}</span>
-                      </div>
+              <div className="space-y-4 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <span className="text-xs font-medium text-slate-600 dark:text-slate-300 block mb-1">左クリック色</span>
+                    <div className="flex gap-2 items-center">
+                      <input 
+                        type="color" 
+                        value={config.ripple.leftColor}
+                        onChange={(e) => updateConfig('ripple', { leftColor: e.target.value })}
+                        className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0"
+                      />
+                      <span className="text-xs font-mono text-slate-500">{config.ripple.leftColor}</span>
                     </div>
                   </div>
-
                   <div>
-                    <div className="flex justify-between text-xs mb-1 font-medium text-slate-600 dark:text-slate-300">
-                      <span>波紋の最大半径</span>
-                      <span>{config.ripple.radius} px</span>
+                    <span className="text-xs font-medium text-slate-600 dark:text-slate-300 block mb-1">右クリック色</span>
+                    <div className="flex gap-2 items-center">
+                      <input 
+                        type="color" 
+                        value={config.ripple.rightColor}
+                        onChange={(e) => updateConfig('ripple', { rightColor: e.target.value })}
+                        className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0"
+                      />
+                      <span className="text-xs font-mono text-slate-500">{config.ripple.rightColor}</span>
                     </div>
-                    <input 
-                      type="range" min="15" max="80" step="5"
-                      value={config.ripple.radius}
-                      onChange={(e) => updateConfig('ripple', { radius: parseInt(e.target.value) })}
-                      className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-600"
-                    />
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between text-xs mb-1 font-medium text-slate-600 dark:text-slate-300">
-                      <span>波紋の広がる速度</span>
-                      <span>{config.ripple.speed}</span>
-                    </div>
-                    <input 
-                      type="range" min="0.5" max="4.0" step="0.5"
-                      value={config.ripple.speed}
-                      onChange={(e) => updateConfig('ripple', { speed: parseFloat(e.target.value) })}
-                      className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-600"
-                    />
                   </div>
                 </div>
-              )}
+
+                <div>
+                  <div className="flex justify-between text-xs mb-1 font-medium text-slate-600 dark:text-slate-300">
+                    <span>波紋の最大半径</span>
+                    <span>{config.ripple.radius} px</span>
+                  </div>
+                  <input 
+                    type="range" min="15" max="80" step="5"
+                    value={config.ripple.radius}
+                    onChange={(e) => updateConfig('ripple', { radius: parseInt(e.target.value) })}
+                    className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-xs mb-1 font-medium text-slate-600 dark:text-slate-300">
+                    <span>波紋の広がる速度</span>
+                    <span>{config.ripple.speed}</span>
+                  </div>
+                  <input 
+                    type="range" min="0.5" max="4.0" step="0.5"
+                    value={config.ripple.speed}
+                    onChange={(e) => updateConfig('ripple', { speed: parseFloat(e.target.value) })}
+                    className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                  />
+                </div>
+              </div>
             </div>
 
           </div>
@@ -448,13 +559,27 @@ export default function App() {
                   />
                 </div>
 
-                <div className="pt-2 flex justify-end">
+                <div className="pt-2 flex justify-end gap-2 flex-wrap">
                   <button
-                    onClick={handleClearDrawing}
-                    className="flex items-center gap-2 px-4 py-2 bg-rose-550 dark:bg-rose-900/60 hover:bg-rose-600 dark:hover:bg-rose-900/80 text-white rounded-xl text-sm font-semibold transition-all border border-rose-200/10 shadow-sm"
+                    onClick={handleUndoDrawing}
+                    className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-sm font-semibold transition-all shadow-sm border border-slate-200 dark:border-slate-700"
+                  >
+                    <Undo className="h-4 w-4" />
+                    戻る (Undo)
+                  </button>
+                  <button
+                    onClick={handleRedoDrawing}
+                    className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-sm font-semibold transition-all shadow-sm border border-slate-200 dark:border-slate-700"
+                  >
+                    <Redo className="h-4 w-4" />
+                    やり直し (Redo)
+                  </button>
+                  <button
+                    onClick={handleClearAllDrawing}
+                    className="flex items-center gap-2 px-3 py-2 bg-rose-600 hover:bg-rose-700 dark:bg-rose-900/60 dark:hover:bg-rose-900/80 text-white rounded-xl text-sm font-semibold transition-all shadow-sm"
                   >
                     <Trash2 className="h-4 w-4" />
-                    描画したメモをすべてクリア
+                    すべてクリア
                   </button>
                 </div>
               </div>
@@ -478,22 +603,20 @@ export default function App() {
                 />
               </div>
 
-              {config.keycast.enabled && (
-                <div className="space-y-4 pt-2 border-t border-slate-100 dark:border-slate-800">
-                  <div>
-                    <div className="flex justify-between text-xs mb-1 font-medium text-slate-600 dark:text-slate-300">
-                      <span>表示し続ける時間</span>
-                      <span>{config.keycast.duration / 1000} 秒</span>
-                    </div>
-                    <input 
-                      type="range" min="1000" max="5000" step="500"
-                      value={config.keycast.duration}
-                      onChange={(e) => updateConfig('keycast', { duration: parseInt(e.target.value) })}
-                      className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-600"
-                    />
+              <div className="space-y-4 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <div>
+                  <div className="flex justify-between text-xs mb-1 font-medium text-slate-600 dark:text-slate-300">
+                    <span>表示し続ける時間</span>
+                    <span>{config.keycast.duration / 1000} 秒</span>
                   </div>
+                  <input 
+                    type="range" min="1000" max="5000" step="500"
+                    value={config.keycast.duration}
+                    onChange={(e) => updateConfig('keycast', { duration: parseInt(e.target.value) })}
+                    className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                  />
                 </div>
-              )}
+              </div>
             </div>
 
           </div>
@@ -523,6 +646,13 @@ export default function App() {
                 </div>
 
                 <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/30 dark:border-slate-700/30">
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">エリアスポットライトのON/OFF</span>
+                  <kbd className="px-2.5 py-1 bg-white dark:bg-slate-700 text-xs font-mono font-bold rounded-lg border border-slate-200 dark:border-slate-600 shadow-sm text-indigo-600 dark:text-indigo-400">
+                    Ctrl + Shift + A
+                  </kbd>
+                </div>
+
+                <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/30 dark:border-slate-700/30">
                   <span className="text-sm font-medium text-slate-700 dark:text-slate-300">レーザーポインターのON/OFF</span>
                   <kbd className="px-2.5 py-1 bg-white dark:bg-slate-700 text-xs font-mono font-bold rounded-lg border border-slate-200 dark:border-slate-600 shadow-sm text-indigo-600 dark:text-indigo-400">
                     Ctrl + Shift + L
@@ -537,7 +667,21 @@ export default function App() {
                 </div>
 
                 <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/30 dark:border-slate-700/30">
-                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">手書きメモのクリア</span>
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">手書きメモを戻す (Undo)</span>
+                  <kbd className="px-2.5 py-1 bg-white dark:bg-slate-700 text-xs font-mono font-bold rounded-lg border border-slate-200 dark:border-slate-600 shadow-sm text-indigo-600 dark:text-indigo-400">
+                    Ctrl + Shift + Z
+                  </kbd>
+                </div>
+
+                <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/30 dark:border-slate-700/30">
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">手書きメモをやり直す (Redo)</span>
+                  <kbd className="px-2.5 py-1 bg-white dark:bg-slate-700 text-xs font-mono font-bold rounded-lg border border-slate-200 dark:border-slate-600 shadow-sm text-indigo-600 dark:text-indigo-400">
+                    Ctrl + Shift + Y
+                  </kbd>
+                </div>
+
+                <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/30 dark:border-slate-700/30">
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">手書きメモの全クリア</span>
                   <kbd className="px-2.5 py-1 bg-white dark:bg-slate-700 text-xs font-mono font-bold rounded-lg border border-slate-200 dark:border-slate-600 shadow-sm text-indigo-600 dark:text-indigo-400">
                     Ctrl + Shift + C
                   </kbd>

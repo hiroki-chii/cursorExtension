@@ -16,6 +16,8 @@ export default function App() {
   const canvasRef = useRef(null);
   const [config, setConfig] = useState(null);
   const [keyCast, setKeyCast] = useState({ text: '', visible: false, timestamp: 0 });
+  const [isSettingsActive, setIsSettingsActive] = useState(false);
+  const isSettingsActiveRef = useRef(false);
   
   // 描画ループで確実に最新値を取得するため、refを使用
   const mousePosRef = useRef({ x: 0, y: 0 });
@@ -24,8 +26,21 @@ export default function App() {
   
   // 手書きペンデータ
   const strokesRef = useRef([]);
+  const redoStrokesRef = useRef([]); // やり直し用
   const currentStrokeRef = useRef(null);
   const isDrawingRef = useRef(false);
+
+  // エリアスポットライト選択用のステート/Ref
+  const selectionStartRef = useRef(null);
+  const [tempRect, setTempRect] = useState(null);
+
+  useEffect(() => {
+    isSettingsActiveRef.current = isSettingsActive;
+    if (isSettingsActive) {
+      laserHistoryRef.current = [];
+      ripplesRef.current = [];
+    }
+  }, [isSettingsActive]);
 
   useEffect(() => {
     if (window.electronAPI) {
@@ -41,6 +56,7 @@ export default function App() {
 
       // グローバルマウスイベントの同期
       const unsubscribeMouse = window.electronAPI.onGlobalMouse((e) => {
+        if (isSettingsActiveRef.current) return;
         if (e.type === 'move') {
           mousePosRef.current = { x: e.x, y: e.y };
           if (config?.laser?.enabled) {
@@ -65,8 +81,42 @@ export default function App() {
         }
       });
 
-      // グローバルキーイベントの同期 (キーキャスト)
+      // グローバルキーイベントの同期 (キーキャスト & 各種制御)
       const unsubscribeKey = window.electronAPI.onGlobalKey((e) => {
+        if (isSettingsActiveRef.current) return;
+        // Escキー (keycode 1) で通常のスポットライト・エリアスポットライト選択を解除/キャンセルする
+        if (e.keycode === 1) { // Esc
+          let changed = false;
+          const updatedConfig = { ...config };
+
+          if (config?.areaSpotlight?.enabled) {
+            updatedConfig.areaSpotlight = {
+              ...config.areaSpotlight,
+              enabled: false,
+              rect: null
+            };
+            changed = true;
+          }
+
+          if (config?.spotlight?.enabled) {
+            updatedConfig.spotlight = {
+              ...config.spotlight,
+              enabled: false
+            };
+            changed = true;
+          }
+
+          if (changed) {
+            setConfig(updatedConfig);
+            if (window.electronAPI) {
+              window.electronAPI.updateConfig(updatedConfig);
+            }
+            setTempRect(null);
+            selectionStartRef.current = null;
+            return;
+          }
+        }
+
         if (!config?.keycast?.enabled) return;
 
         // 修飾キー単体は無視
@@ -89,10 +139,39 @@ export default function App() {
         });
       });
 
-      // 手書きクリアの同期
-      const unsubscribeClear = window.electronAPI.onClearDrawing(() => {
-        strokesRef.current = [];
+      // 手書きクリアの同期 (allがtrueなら全クリア、falseなら1画消去/Undo)
+      const unsubscribeClear = window.electronAPI.onClearDrawing((all) => {
+        if (all) {
+          strokesRef.current = [];
+          redoStrokesRef.current = [];
+        } else {
+          if (strokesRef.current.length > 0) {
+            const popped = strokesRef.current.pop();
+            redoStrokesRef.current.push(popped);
+          }
+        }
         currentStrokeRef.current = null;
+      });
+
+      // 手書きアンドゥの同期
+      const unsubscribeUndo = window.electronAPI.onUndoDrawing(() => {
+        if (strokesRef.current.length > 0) {
+          const popped = strokesRef.current.pop();
+          redoStrokesRef.current.push(popped);
+        }
+      });
+
+      // 手書きリドゥの同期
+      const unsubscribeRedo = window.electronAPI.onRedoDrawing(() => {
+        if (redoStrokesRef.current.length > 0) {
+          const popped = redoStrokesRef.current.pop();
+          strokesRef.current.push(popped);
+        }
+      });
+
+      // 設定画面のアクティブ状態の同期
+      const unsubscribeSettingsState = window.electronAPI.onSettingsStateChanged((active) => {
+        setIsSettingsActive(active);
       });
 
       return () => {
@@ -100,6 +179,9 @@ export default function App() {
         unsubscribeMouse();
         unsubscribeKey();
         unsubscribeClear();
+        unsubscribeUndo();
+        unsubscribeRedo();
+        unsubscribeSettingsState();
       };
     }
   }, [config]);
@@ -144,6 +226,12 @@ export default function App() {
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+      // 設定ウィンドウがアクティブな場合は、エフェクトを描画しない
+      if (isSettingsActive) {
+        animationId = requestAnimationFrame(draw);
+        return;
+      }
+
       // 1. スポットライト
       if (config.spotlight?.enabled) {
         ctx.save();
@@ -165,6 +253,37 @@ export default function App() {
         ctx.arc(mousePosRef.current.x, mousePosRef.current.y, radius, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
+      }
+
+      // 1.5. エリアスポットライト（矩形・ドラッグ選択）
+      if (config.areaSpotlight?.enabled) {
+        const activeRect = config.areaSpotlight.rect || tempRect;
+        const isSelecting = config.areaSpotlight.enabled && !config.areaSpotlight.rect;
+
+        if (activeRect) {
+          ctx.save();
+          // 暗い背景を描く
+          ctx.fillStyle = `rgba(15, 23, 42, ${config.areaSpotlight.opacity || 0.6})`;
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          // 矩形部分をくり抜く
+          ctx.globalCompositeOperation = 'destination-out';
+          ctx.fillStyle = 'rgba(0, 0, 0, 1.0)';
+          ctx.fillRect(activeRect.x, activeRect.y, activeRect.width, activeRect.height);
+
+          // 枠線を描画する
+          ctx.globalCompositeOperation = 'source-over';
+          ctx.strokeStyle = config.areaSpotlight.borderColor || '#3b82f6';
+          ctx.lineWidth = config.areaSpotlight.borderWidth || 2;
+          ctx.strokeRect(activeRect.x, activeRect.y, activeRect.width, activeRect.height);
+          ctx.restore();
+        } else if (isSelecting) {
+          // まだドラッグが始まっていない選択中のとき（画面全体を軽く暗くして、ドラッグできることを示す）
+          ctx.save();
+          ctx.fillStyle = `rgba(15, 23, 42, ${(config.areaSpotlight.opacity || 0.6) * 0.5})`;
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.restore();
+        }
       }
 
       // 2. 手書きペン
@@ -279,10 +398,21 @@ export default function App() {
       cancelAnimationFrame(animationId);
       window.removeEventListener('resize', resizeCanvas);
     };
-  }, [config]);
+  }, [config, isSettingsActive]);
 
-  // 手書き入力ハンドラー
+  const isAreaSelecting = config?.areaSpotlight?.enabled && !config?.areaSpotlight?.rect;
+
+  // 手書き & エリア選択入力ハンドラー
   const handlePointerDown = (e) => {
+    if (isAreaSelecting) {
+      const rect = canvasRef.current.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      selectionStartRef.current = { x, y };
+      setTempRect({ x, y, width: 0, height: 0 });
+      return;
+    }
+
     if (!config?.pen?.enabled) return;
     
     isDrawingRef.current = true;
@@ -298,6 +428,22 @@ export default function App() {
   };
 
   const handlePointerMove = (e) => {
+    if (isAreaSelecting && selectionStartRef.current) {
+      const rect = canvasRef.current.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const startX = selectionStartRef.current.x;
+      const startY = selectionStartRef.current.y;
+      
+      setTempRect({
+        x: Math.min(startX, x),
+        y: Math.min(startY, y),
+        width: Math.abs(x - startX),
+        height: Math.abs(y - startY)
+      });
+      return;
+    }
+
     if (!isDrawingRef.current || !currentStrokeRef.current) return;
     
     const rect = canvasRef.current.getBoundingClientRect();
@@ -313,21 +459,44 @@ export default function App() {
   };
 
   const handlePointerUp = () => {
+    if (isAreaSelecting && selectionStartRef.current) {
+      if (tempRect && tempRect.width > 10 && tempRect.height > 10) {
+        const updatedConfig = {
+          ...config,
+          areaSpotlight: {
+            ...config.areaSpotlight,
+            rect: tempRect,
+            enabled: true
+          }
+        };
+        setConfig(updatedConfig);
+        if (window.electronAPI) {
+          window.electronAPI.updateConfig(updatedConfig);
+        }
+      } else {
+        setTempRect(null);
+      }
+      selectionStartRef.current = null;
+      return;
+    }
+
     if (!isDrawingRef.current) return;
     isDrawingRef.current = false;
     
     if (currentStrokeRef.current && currentStrokeRef.current.points.length >= 2) {
       strokesRef.current.push(currentStrokeRef.current);
+      redoStrokesRef.current = []; // 新しく描画されたのでやり直し履歴をクリア
     }
     currentStrokeRef.current = null;
   };
 
   const isPenActive = config?.pen?.enabled;
+  const isInteractive = !isSettingsActive && (isPenActive || isAreaSelecting);
 
   return (
     <div 
       className="relative w-full h-full select-none"
-      style={{ pointerEvents: isPenActive ? 'auto' : 'none' }}
+      style={{ pointerEvents: isInteractive ? 'auto' : 'none' }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
@@ -336,7 +505,7 @@ export default function App() {
       <canvas 
         ref={canvasRef} 
         className="absolute inset-0 block bg-transparent"
-        style={{ pointerEvents: isPenActive ? 'auto' : 'none' }}
+        style={{ pointerEvents: isInteractive ? 'auto' : 'none' }}
       />
       
       {/* キーキャストバッジ */}

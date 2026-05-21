@@ -33,11 +33,41 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 手書きのクリアシグナル (メイン -> オーバーレイ)
   onClearDrawing: (callback) => {
-    const subscription = () => callback();
+    const subscription = (event, all) => callback(all);
     ipcRenderer.on('clear-drawing', subscription);
     return () => ipcRenderer.removeListener('clear-drawing', subscription);
   },
   
   // 手書きクリアシグナルの送信 (設定 -> メイン -> オーバーレイ)
-  triggerClearDrawing: () => ipcRenderer.send('trigger-clear-drawing'),
+  triggerClearDrawing: (all = false) => ipcRenderer.send('trigger-clear-drawing', all),
+
+  // 手書きのアンドゥシグナル (メイン -> オーバーレイ)
+  onUndoDrawing: (callback) => {
+    const subscription = () => callback();
+    ipcRenderer.on('undo-drawing', subscription);
+    return () => ipcRenderer.removeListener('undo-drawing', subscription);
+  },
+  
+  // 手書きのアンドゥ送信 (設定 -> メイン -> オーバーレイ)
+  triggerUndoDrawing: () => ipcRenderer.send('trigger-undo-drawing'),
+
+  // 手書きのリドゥシグナル (メイン -> オーバーレイ)
+  onRedoDrawing: (callback) => {
+    const subscription = () => callback();
+    ipcRenderer.on('redo-drawing', subscription);
+    return () => ipcRenderer.removeListener('redo-drawing', subscription);
+  },
+
+  // 手書きのリドゥ送信 (設定 -> メイン -> オーバーレイ)
+  triggerRedoDrawing: () => ipcRenderer.send('trigger-redo-drawing'),
+
+  // 設定画面のホバー状態を通知 (設定 -> メイン)
+  setSettingsHover: (isHovered) => ipcRenderer.send('set-settings-hover', isHovered),
+
+  // 設定画面のアクティブ状態の同期を受信 (メイン -> オーバーレイ)
+  onSettingsStateChanged: (callback) => {
+    const subscription = (event, active) => callback(active);
+    ipcRenderer.on('settings-state-changed', subscription);
+    return () => ipcRenderer.removeListener('settings-state-changed', subscription);
+  },
 });
