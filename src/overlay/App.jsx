@@ -224,6 +224,8 @@ export default function App() {
         return;
       }
 
+      const isAreaSelecting = config.areaSpotlight?.enabled && !config.areaSpotlight?.rect;
+
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       // 設定ウィンドウがアクティブな場合は、エフェクトを描画しない
@@ -389,6 +391,61 @@ export default function App() {
         ctx.restore();
       }
 
+      // 5. マウス追従インジケータ (ペンモード / エリアスポットライト選択中)
+      if (!isSettingsActive) {
+        if (config.pen?.enabled) {
+          ctx.save();
+          const mx = mousePosRef.current.x;
+          const my = mousePosRef.current.y;
+          
+          // ペン色を取得（デフォルトは黄色）
+          const penColor = config.pen.color || '#eab308';
+          
+          // ガラス風の小さなサークル
+          ctx.beginPath();
+          ctx.arc(mx + 16, my + 16, 12, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.75)'; // ダークなガラス背景
+          ctx.strokeStyle = penColor;
+          ctx.lineWidth = 1.5;
+          ctx.shadowBlur = 6;
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
+          ctx.fill();
+          ctx.stroke();
+          
+          // ペン絵文字
+          ctx.fillStyle = '#ffffff';
+          ctx.font = '11px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('✏️', mx + 16, my + 16);
+          ctx.restore();
+        } else if (isAreaSelecting) {
+          ctx.save();
+          const mx = mousePosRef.current.x;
+          const my = mousePosRef.current.y;
+          const borderColor = config.areaSpotlight?.borderColor || '#3b82f6';
+          
+          // エリア選択用のガラス風サークル
+          ctx.beginPath();
+          ctx.arc(mx + 16, my + 16, 12, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
+          ctx.strokeStyle = borderColor;
+          ctx.lineWidth = 1.5;
+          ctx.shadowBlur = 6;
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
+          ctx.fill();
+          ctx.stroke();
+          
+          // クロスヘア絵文字
+          ctx.fillStyle = '#ffffff';
+          ctx.font = '12px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('⛶', mx + 16, my + 16);
+          ctx.restore();
+        }
+      }
+
       animationId = requestAnimationFrame(draw);
     };
 
@@ -493,10 +550,17 @@ export default function App() {
   const isPenActive = config?.pen?.enabled;
   const isInteractive = !isSettingsActive && (isPenActive || isAreaSelecting);
 
+  let cursorStyle = 'default';
+  if (isPenActive) {
+    cursorStyle = 'crosshair';
+  } else if (isAreaSelecting) {
+    cursorStyle = 'crosshair';
+  }
+
   return (
     <div 
       className="relative w-full h-full select-none"
-      style={{ pointerEvents: isInteractive ? 'auto' : 'none' }}
+      style={{ pointerEvents: isInteractive ? 'auto' : 'none', cursor: cursorStyle }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
@@ -505,9 +569,39 @@ export default function App() {
       <canvas 
         ref={canvasRef} 
         className="absolute inset-0 block bg-transparent"
-        style={{ pointerEvents: isInteractive ? 'auto' : 'none' }}
+        style={{ pointerEvents: isInteractive ? 'auto' : 'none', cursor: cursorStyle }}
       />
       
+      {/* モードインジケーターバッジ */}
+      {!isSettingsActive && (isPenActive || config?.areaSpotlight?.enabled) && (
+        <div className="absolute top-6 right-6 flex flex-col gap-3 pointer-events-none z-50">
+          {isPenActive && (
+            <div className="px-4 py-2.5 bg-slate-900/85 text-white rounded-2xl border border-yellow-500/30 shadow-2xl flex items-center gap-3 backdrop-blur-md animate-fade-in transition-all duration-300">
+              <div className="w-2.5 h-2.5 rounded-full bg-yellow-500 animate-pulse" />
+              <div className="flex flex-col">
+                <span className="text-xs text-yellow-400 font-bold tracking-wider">PEN MODE</span>
+                <span className="text-xs text-slate-300">手書きペンが有効です</span>
+              </div>
+              <span className="text-[10px] bg-slate-800 px-2 py-0.5 rounded text-slate-400 font-mono">Ctrl+Shift+P</span>
+            </div>
+          )}
+          {config?.areaSpotlight?.enabled && (
+            <div className="px-4 py-2.5 bg-slate-900/85 text-white rounded-2xl border border-blue-500/30 shadow-2xl flex items-center gap-3 backdrop-blur-md animate-fade-in transition-all duration-300">
+              <div className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse" />
+              <div className="flex flex-col">
+                <span className="text-xs text-blue-400 font-bold tracking-wider">AREA SPOTLIGHT</span>
+                <span className="text-xs text-slate-300">
+                  {isAreaSelecting ? 'ドラッグして範囲を選択してください' : 'エリアスポットライトが有効です'}
+                </span>
+              </div>
+              <span className="text-[10px] bg-slate-800 px-2 py-0.5 rounded text-slate-400 font-mono">
+                {isAreaSelecting ? 'Escでキャンセル' : 'Escで解除'}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* キーキャストバッジ */}
       {config?.keycast?.enabled && keyCast.visible && (
         <div className="absolute bottom-20 left-1/2 transform -translate-x-1/2 flex items-center justify-center pointer-events-none transition-all duration-300 ease-out opacity-100 scale-100">
