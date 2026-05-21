@@ -1,0 +1,48 @@
+{
+  "name": "presenter-cursor",
+  "version": "1.0.0",
+  "description": "プレゼン中に役立つマウスポインター拡張アプリ",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "electron .",
+    "electron:dev": "concurrently -k \"npm run dev\" \"electron .\"",
+    "electron:build": "npm run build && node scripts/make-ico.js && electron-builder"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "lucide-react": "^0.475.0",
+    "uiohook-napi": "^1.5.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.19",
+    "concurrently": "^8.2.2",
+    "electron": "^30.0.9",
+    "electron-builder": "^24.13.3",
+    "png-to-ico": "^2.1.8",
+    "postcss": "^8.4.38",
+    "tailwindcss": "^3.4.3",
+    "vite": "^5.2.11"
+  },
+  "build": {
+    "appId": "com.presenter.cursor",
+    "productName": "PresenterCursor",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "asar": true,
+    "asarUnpack": [
+      "**/node_modules/uiohook-napi/**/*"
+    ]
+  }
+}

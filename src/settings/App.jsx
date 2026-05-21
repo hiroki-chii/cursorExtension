@@ -1,0 +1,564 @@
+import React, { useEffect, useState } from 'react';
+import { 
+  Sun, Moon, Monitor, Sparkles, Sliders, Trash2, 
+  MousePointer, Zap, Edit3, Keyboard, Info, Check, HelpCircle
+} from 'lucide-react';
+import { useTheme } from '../components/ThemeProvider';
+
+export default function App() {
+  const { theme, setTheme } = useTheme();
+  const [config, setConfig] = useState(null);
+  const [activeTab, setActiveTab] = useState('effects'); // 'effects', 'drawing', 'shortcuts'
+
+  useEffect(() => {
+    if (window.electronAPI) {
+      window.electronAPI.getConfig().then((loadedConfig) => {
+        setConfig(loadedConfig);
+      });
+
+      const unsubscribe = window.electronAPI.onConfigUpdate((newConfig) => {
+        setConfig(newConfig);
+      });
+      return unsubscribe;
+    }
+  }, []);
+
+  if (!config) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent"></div>
+          <p className="text-sm text-slate-500 dark:text-slate-400">設定を読み込み中...</p>
+        </div>
+      </div>
+    );
+  }
+
+  const updateConfig = (section, values) => {
+    const updated = {
+      ...config,
+      [section]: {
+        ...config[section],
+        ...values
+      }
+    };
+    setConfig(updated);
+    if (window.electronAPI) {
+      window.electronAPI.updateConfig(updated);
+    }
+  };
+
+  const handleThemeChange = (newTheme) => {
+    setTheme(newTheme);
+    const updated = { ...config, theme: newTheme };
+    setConfig(updated);
+    if (window.electronAPI) {
+      window.electronAPI.updateConfig(updated);
+    }
+  };
+
+  const handleClearDrawing = () => {
+    if (window.electronAPI) {
+      window.electronAPI.triggerClearDrawing();
+    }
+  };
+
+  const PRESET_COLORS = [
+    '#ef4444', // レッド
+    '#3b82f6', // ブルー
+    '#10b981', // グリーン
+    '#eab308', // イエロー
+    '#a855f7', // パープル
+    '#f97316', // オレンジ
+    '#ec4899', // ピンク
+  ];
+
+  // カスタムトグルスイッチコンポーネント
+  const Switch = ({ checked, onChange }) => (
+    <button
+      onClick={() => onChange(!checked)}
+      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none ${
+        checked ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-700'
+      }`}
+    >
+      <span
+        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 ${
+          checked ? 'translate-x-6' : 'translate-x-1'
+        }`}
+      />
+    </button>
+  );
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-slate-100/50 to-slate-200/30 text-slate-900 transition-colors duration-200 dark:from-slate-950 dark:via-slate-900/50 dark:to-slate-950 dark:text-slate-50 flex flex-col h-screen overflow-hidden">
+      
+      {/* ヘッダー */}
+      <header className="px-6 py-4 bg-white/70 dark:bg-slate-900/70 border-b border-slate-200/50 dark:border-slate-800/50 backdrop-blur-md flex items-center justify-between flex-shrink-0">
+        <div className="flex items-center gap-2">
+          <div className="p-2 bg-indigo-500 rounded-xl text-white shadow-lg shadow-indigo-500/30 animate-pulse">
+            <Sparkles className="h-5 w-5" />
+          </div>
+          <div>
+            <h1 className="text-lg font-bold tracking-tight bg-gradient-to-r from-indigo-500 to-purple-600 bg-clip-text text-transparent">PresenterCursor</h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400">プレゼンテーション支援ツール</p>
+          </div>
+        </div>
+
+        {/* テーマ切り替え */}
+        <div className="flex items-center gap-1 bg-slate-200/60 dark:bg-slate-800/60 p-1 rounded-xl">
+          <button
+            onClick={() => handleThemeChange('light')}
+            className={`p-1.5 rounded-lg transition-all ${theme === 'light' ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-500' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+            title="ライトモード"
+          >
+            <Sun className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => handleThemeChange('dark')}
+            className={`p-1.5 rounded-lg transition-all ${theme === 'dark' ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-400' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+            title="ダークモード"
+          >
+            <Moon className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => handleThemeChange('system')}
+            className={`p-1.5 rounded-lg transition-all ${theme === 'system' ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-500 dark:text-indigo-400' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+            title="システム同期"
+          >
+            <Monitor className="h-4 w-4" />
+          </button>
+        </div>
+      </header>
+
+      {/* タブナビゲーション */}
+      <div className="px-6 py-2 bg-white/40 dark:bg-slate-900/40 border-b border-slate-200/30 dark:border-slate-800/30 flex gap-2 flex-shrink-0">
+        <button
+          onClick={() => setActiveTab('effects')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+            activeTab === 'effects' 
+              ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 shadow-sm' 
+              : 'text-slate-500 hover:bg-slate-200/50 dark:hover:bg-slate-800/50'
+          }`}
+        >
+          <MousePointer className="h-4 w-4" />
+          ポインター効果
+        </button>
+        <button
+          onClick={() => setActiveTab('drawing')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+            activeTab === 'drawing' 
+              ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 shadow-sm' 
+              : 'text-slate-500 hover:bg-slate-200/50 dark:hover:bg-slate-800/50'
+          }`}
+        >
+          <Edit3 className="h-4 w-4" />
+          描画 & アシスト
+        </button>
+        <button
+          onClick={() => setActiveTab('shortcuts')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+            activeTab === 'shortcuts' 
+              ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 shadow-sm' 
+              : 'text-slate-500 hover:bg-slate-200/50 dark:hover:bg-slate-800/50'
+          }`}
+        >
+          <Keyboard className="h-4 w-4" />
+          ショートカット
+        </button>
+      </div>
+
+      {/* コンテンツエリア */}
+      <main className="flex-1 overflow-y-auto p-6 space-y-6">
+        
+        {/* === ポインター効果タブ === */}
+        {activeTab === 'effects' && (
+          <div className="space-y-6 max-w-2xl mx-auto">
+            
+            {/* スポットライト設定 */}
+            <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-yellow-100 dark:bg-yellow-950/40 text-yellow-600 dark:text-yellow-400 rounded-xl">
+                    <Sun className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-800 dark:text-slate-100">スポットライト効果</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">マウスポインターの周囲以外を暗くします</p>
+                  </div>
+                </div>
+                <Switch 
+                  checked={config.spotlight.enabled} 
+                  onChange={(val) => updateConfig('spotlight', { enabled: val })} 
+                />
+              </div>
+
+              {config.spotlight.enabled && (
+                <div className="space-y-4 pt-2 border-t border-slate-100 dark:border-slate-800 animate-fadeIn">
+                  <div>
+                    <div className="flex justify-between text-xs mb-1 font-medium text-slate-600 dark:text-slate-300">
+                      <span>スポットライトの半径</span>
+                      <span>{config.spotlight.radius} px</span>
+                    </div>
+                    <input 
+                      type="range" min="50" max="300" step="5"
+                      value={config.spotlight.radius}
+                      onChange={(e) => updateConfig('spotlight', { radius: parseInt(e.target.value) })}
+                      className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-xs mb-1 font-medium text-slate-600 dark:text-slate-300">
+                      <span>背景の不透明度（暗さ）</span>
+                      <span>{Math.round(config.spotlight.opacity * 100)} %</span>
+                    </div>
+                    <input 
+                      type="range" min="0.1" max="0.9" step="0.05"
+                      value={config.spotlight.opacity}
+                      onChange={(e) => updateConfig('spotlight', { opacity: parseFloat(e.target.value) })}
+                      className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* レーザーポインター設定 */}
+            <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 rounded-xl">
+                    <Zap className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-800 dark:text-slate-100">レーザーポインター</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">マウスポインターに赤いドットと軌跡を付けます</p>
+                  </div>
+                </div>
+                <Switch 
+                  checked={config.laser.enabled} 
+                  onChange={(val) => updateConfig('laser', { enabled: val })} 
+                />
+              </div>
+
+              {config.laser.enabled && (
+                <div className="space-y-4 pt-2 border-t border-slate-100 dark:border-slate-800">
+                  {/* カラー選択 */}
+                  <div>
+                    <span className="text-xs font-medium text-slate-600 dark:text-slate-300 block mb-2">カラー</span>
+                    <div className="flex flex-wrap gap-2 items-center">
+                      {PRESET_COLORS.map(color => (
+                        <button
+                          key={color}
+                          onClick={() => updateConfig('laser', { color })}
+                          style={{ backgroundColor: color }}
+                          className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${
+                            config.laser.color === color ? 'ring-2 ring-indigo-500 dark:ring-indigo-400 scale-110 shadow-sm' : 'hover:scale-105'
+                          }`}
+                        >
+                          {config.laser.color === color && <Check className="h-4 w-4 text-white drop-shadow-sm" />}
+                        </button>
+                      ))}
+                      <input 
+                        type="color" 
+                        value={config.laser.color}
+                        onChange={(e) => updateConfig('laser', { color: e.target.value })}
+                        className="w-8 h-8 rounded-lg border-0 p-0 cursor-pointer overflow-hidden bg-transparent"
+                      />
+                    </div>
+                  </div>
+
+                  {/* サイズスライダー */}
+                  <div>
+                    <div className="flex justify-between text-xs mb-1 font-medium text-slate-600 dark:text-slate-300">
+                      <span>ポインターのサイズ</span>
+                      <span>{config.laser.radius * 2} px</span>
+                    </div>
+                    <input 
+                      type="range" min="3" max="20" step="1"
+                      value={config.laser.radius}
+                      onChange={(e) => updateConfig('laser', { radius: parseInt(e.target.value) })}
+                      className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                    />
+                  </div>
+
+                  {/* 軌跡の長さスライダー */}
+                  <div>
+                    <div className="flex justify-between text-xs mb-1 font-medium text-slate-600 dark:text-slate-300">
+                      <span>軌跡の長さ</span>
+                      <span>{config.laser.trailLength}</span>
+                    </div>
+                    <input 
+                      type="range" min="2" max="25" step="1"
+                      value={config.laser.trailLength}
+                      onChange={(e) => updateConfig('laser', { trailLength: parseInt(e.target.value) })}
+                      className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* クリックインジケーター設定 */}
+            <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-blue-100 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 rounded-xl">
+                    <MousePointer className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-800 dark:text-slate-100">クリックインジケーター</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">クリックした位置に波紋エフェクトを表示します</p>
+                  </div>
+                </div>
+                <Switch 
+                  checked={config.ripple.enabled} 
+                  onChange={(val) => updateConfig('ripple', { enabled: val })} 
+                />
+              </div>
+
+              {config.ripple.enabled && (
+                <div className="space-y-4 pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <span className="text-xs font-medium text-slate-600 dark:text-slate-300 block mb-1">左クリック色</span>
+                      <div className="flex gap-2 items-center">
+                        <input 
+                          type="color" 
+                          value={config.ripple.leftColor}
+                          onChange={(e) => updateConfig('ripple', { leftColor: e.target.value })}
+                          className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0"
+                        />
+                        <span className="text-xs font-mono text-slate-500">{config.ripple.leftColor}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-xs font-medium text-slate-600 dark:text-slate-300 block mb-1">右クリック色</span>
+                      <div className="flex gap-2 items-center">
+                        <input 
+                          type="color" 
+                          value={config.ripple.rightColor}
+                          onChange={(e) => updateConfig('ripple', { rightColor: e.target.value })}
+                          className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0"
+                        />
+                        <span className="text-xs font-mono text-slate-500">{config.ripple.rightColor}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-xs mb-1 font-medium text-slate-600 dark:text-slate-300">
+                      <span>波紋の最大半径</span>
+                      <span>{config.ripple.radius} px</span>
+                    </div>
+                    <input 
+                      type="range" min="15" max="80" step="5"
+                      value={config.ripple.radius}
+                      onChange={(e) => updateConfig('ripple', { radius: parseInt(e.target.value) })}
+                      className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-xs mb-1 font-medium text-slate-600 dark:text-slate-300">
+                      <span>波紋の広がる速度</span>
+                      <span>{config.ripple.speed}</span>
+                    </div>
+                    <input 
+                      type="range" min="0.5" max="4.0" step="0.5"
+                      value={config.ripple.speed}
+                      onChange={(e) => updateConfig('ripple', { speed: parseFloat(e.target.value) })}
+                      className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+          </div>
+        )}
+
+        {/* === 描画 & アシストタブ === */}
+        {activeTab === 'drawing' && (
+          <div className="space-y-6 max-w-2xl mx-auto">
+            
+            {/* 手書きペン設定 */}
+            <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-amber-100 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 rounded-xl">
+                    <Edit3 className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-800 dark:text-slate-100">画面手書きマーカー (ペン)</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">画面上のあらゆる場所にフリーハンドでメモを描画します</p>
+                  </div>
+                </div>
+                <Switch 
+                  checked={config.pen.enabled} 
+                  onChange={(val) => updateConfig('pen', { enabled: val })} 
+                />
+              </div>
+
+              {config.pen.enabled && (
+                <div className="p-3 bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-200 rounded-xl text-xs flex gap-2 items-start mb-4">
+                  <Info className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                  <div>
+                    ペンモードが有効な間は、マウスクリックが画面透過されず、画面上への「描画」に割り当てられます。
+                    クリック操作を行いたいときは、ペンモードをオフにしてください。
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-4 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <div>
+                  <span className="text-xs font-medium text-slate-600 dark:text-slate-300 block mb-2">ペンの色</span>
+                  <div className="flex flex-wrap gap-2 items-center">
+                    {PRESET_COLORS.map(color => (
+                      <button
+                        key={color}
+                        onClick={() => updateConfig('pen', { color })}
+                        style={{ backgroundColor: color }}
+                        className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${
+                          config.pen.color === color ? 'ring-2 ring-indigo-500 dark:ring-indigo-400 scale-110 shadow-sm' : 'hover:scale-105'
+                        }`}
+                      >
+                        {config.pen.color === color && <Check className="h-4 w-4 text-white drop-shadow-sm" />}
+                      </button>
+                    ))}
+                    <input 
+                      type="color" 
+                      value={config.pen.color}
+                      onChange={(e) => updateConfig('pen', { color: e.target.value })}
+                      className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-xs mb-1 font-medium text-slate-600 dark:text-slate-300">
+                    <span>ペンの太さ</span>
+                    <span>{config.pen.width} px</span>
+                  </div>
+                  <input 
+                    type="range" min="1" max="15" step="1"
+                    value={config.pen.width}
+                    onChange={(e) => updateConfig('pen', { width: parseInt(e.target.value) })}
+                    className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                  />
+                </div>
+
+                <div className="pt-2 flex justify-end">
+                  <button
+                    onClick={handleClearDrawing}
+                    className="flex items-center gap-2 px-4 py-2 bg-rose-550 dark:bg-rose-900/60 hover:bg-rose-600 dark:hover:bg-rose-900/80 text-white rounded-xl text-sm font-semibold transition-all border border-rose-200/10 shadow-sm"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    描画したメモをすべてクリア
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* キーキャスト設定 */}
+            <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-purple-100 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 rounded-xl">
+                    <Keyboard className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-800 dark:text-slate-100">キーキャスト (打鍵の表示)</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">ショートカットなどの入力キーを画面上に表示します</p>
+                  </div>
+                </div>
+                <Switch 
+                  checked={config.keycast.enabled} 
+                  onChange={(val) => updateConfig('keycast', { enabled: val })} 
+                />
+              </div>
+
+              {config.keycast.enabled && (
+                <div className="space-y-4 pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <div>
+                    <div className="flex justify-between text-xs mb-1 font-medium text-slate-600 dark:text-slate-300">
+                      <span>表示し続ける時間</span>
+                      <span>{config.keycast.duration / 1000} 秒</span>
+                    </div>
+                    <input 
+                      type="range" min="1000" max="5000" step="500"
+                      value={config.keycast.duration}
+                      onChange={(e) => updateConfig('keycast', { duration: parseInt(e.target.value) })}
+                      className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+          </div>
+        )}
+
+        {/* === ショートカットタブ === */}
+        {activeTab === 'shortcuts' && (
+          <div className="space-y-6 max-w-2xl mx-auto">
+            
+            <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2.5 bg-indigo-100 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-xl">
+                  <Keyboard className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-800 dark:text-slate-100">グローバルショートカットキー</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">他のアプリを開いていても動作するシステムショートカット</p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/30 dark:border-slate-700/30">
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">スポットライトのON/OFF</span>
+                  <kbd className="px-2.5 py-1 bg-white dark:bg-slate-700 text-xs font-mono font-bold rounded-lg border border-slate-200 dark:border-slate-600 shadow-sm text-indigo-600 dark:text-indigo-400">
+                    Ctrl + Shift + S
+                  </kbd>
+                </div>
+
+                <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/30 dark:border-slate-700/30">
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">レーザーポインターのON/OFF</span>
+                  <kbd className="px-2.5 py-1 bg-white dark:bg-slate-700 text-xs font-mono font-bold rounded-lg border border-slate-200 dark:border-slate-600 shadow-sm text-indigo-600 dark:text-indigo-400">
+                    Ctrl + Shift + L
+                  </kbd>
+                </div>
+
+                <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/30 dark:border-slate-700/30">
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">手書きペンのON/OFF</span>
+                  <kbd className="px-2.5 py-1 bg-white dark:bg-slate-700 text-xs font-mono font-bold rounded-lg border border-slate-200 dark:border-slate-600 shadow-sm text-indigo-600 dark:text-indigo-400">
+                    Ctrl + Shift + P
+                  </kbd>
+                </div>
+
+                <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/30 dark:border-slate-700/30">
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">手書きメモのクリア</span>
+                  <kbd className="px-2.5 py-1 bg-white dark:bg-slate-700 text-xs font-mono font-bold rounded-lg border border-slate-200 dark:border-slate-600 shadow-sm text-indigo-600 dark:text-indigo-400">
+                    Ctrl + Shift + C
+                  </kbd>
+                </div>
+              </div>
+
+              <div className="mt-4 p-3.5 bg-slate-150 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 rounded-xl text-xs flex gap-2">
+                <HelpCircle className="h-4 w-4 flex-shrink-0 text-indigo-500" />
+                <span>ショートカットキーは他のソフトウェアを操作中（PowerPointやブラウザなどでのスライド表示中）でも、バックグラウンドで常に有効です。</span>
+              </div>
+            </div>
+
+          </div>
+        )}
+
+      </main>
+
+      {/* フッター */}
+      <footer className="px-6 py-3 bg-white/40 dark:bg-slate-900/40 border-t border-slate-200/30 dark:border-slate-800/30 text-center text-xs text-slate-450 flex-shrink-0">
+        &copy; 2026 PresenterCursor. すべてのプレゼンテーションをスマートに。
+      </footer>
+    </div>
+  );
+}
