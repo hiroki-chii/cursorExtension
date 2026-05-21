@@ -571,36 +571,6 @@ export default function App() {
         className="absolute inset-0 block bg-transparent"
         style={{ pointerEvents: isInteractive ? 'auto' : 'none', cursor: cursorStyle }}
       />
-      
-      {/* モードインジケーターバッジ */}
-      {!isSettingsActive && (isPenActive || config?.areaSpotlight?.enabled) && (
-        <div className="absolute top-6 right-6 flex flex-col gap-3 pointer-events-none z-50">
-          {isPenActive && (
-            <div className="px-4 py-2.5 bg-slate-900/85 text-white rounded-2xl border border-yellow-500/30 shadow-2xl flex items-center gap-3 backdrop-blur-md animate-fade-in transition-all duration-300">
-              <div className="w-2.5 h-2.5 rounded-full bg-yellow-500 animate-pulse" />
-              <div className="flex flex-col">
-                <span className="text-xs text-yellow-400 font-bold tracking-wider">PEN MODE</span>
-                <span className="text-xs text-slate-300">手書きペンが有効です</span>
-              </div>
-              <span className="text-[10px] bg-slate-800 px-2 py-0.5 rounded text-slate-400 font-mono">Ctrl+Shift+P</span>
-            </div>
-          )}
-          {config?.areaSpotlight?.enabled && (
-            <div className="px-4 py-2.5 bg-slate-900/85 text-white rounded-2xl border border-blue-500/30 shadow-2xl flex items-center gap-3 backdrop-blur-md animate-fade-in transition-all duration-300">
-              <div className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse" />
-              <div className="flex flex-col">
-                <span className="text-xs text-blue-400 font-bold tracking-wider">AREA SPOTLIGHT</span>
-                <span className="text-xs text-slate-300">
-                  {isAreaSelecting ? 'ドラッグして範囲を選択してください' : 'エリアスポットライトが有効です'}
-                </span>
-              </div>
-              <span className="text-[10px] bg-slate-800 px-2 py-0.5 rounded text-slate-400 font-mono">
-                {isAreaSelecting ? 'Escでキャンセル' : 'Escで解除'}
-              </span>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* キーキャストバッジ */}
       {config?.keycast?.enabled && keyCast.visible && (
