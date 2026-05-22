@@ -139,3 +139,10 @@
   - いずれかの機能がONの時のみ赤色のアクティブ状態になり、すべてOFFのときはグレーアウトして無効化（`disabled`）する動的デザインを導入。
   - アイコンに `Power` を使用し、直感的でモダンなUIを構築。
   - レイアウトの崩れ（ラッパー `div` の閉じタグ `</div>` 不足による JSX コンパイルエラー）を修正。
+
+## 2026-05-22 16:52
+- アプリのロゴを緑基調（エメラルド/ティール）に変更。
+  - `generate_image` を使用して、緑色のモダンなアプリアイコン画像を生成。
+  - 生成画像（JPEG）を .NET の `System.Drawing` を利用した PowerShell スクリプトで正規の PNG 形式 (`build/icon.png`) にデコード・再保存。
+  - `node scripts/make-ico.js` を実行し、`build/icon.ico` および `electron/icon.ico` を緑基調の新しいアイコンファイルに上書き更新。
+  - 設定画面 (`src/settings/App.jsx`) ヘッダーのロゴマーク背景色を `bg-indigo-500` から `bg-emerald-500` (影も `shadow-emerald-500/30` に変更) に、またタイトル `PresenterCursor` の文字グラデーションを `from-emerald-500 to-teal-600` の緑基調に変更。

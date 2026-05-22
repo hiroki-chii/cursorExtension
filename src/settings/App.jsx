@@ -138,11 +138,11 @@ export default function App() {
       {/* ヘッダー */}
       <header className="px-6 py-4 bg-white/70 dark:bg-slate-900/70 border-b border-slate-200/50 dark:border-slate-800/50 backdrop-blur-md flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-2">
-          <div className="p-2 bg-indigo-500 rounded-xl text-white shadow-lg shadow-indigo-500/30 animate-pulse">
+          <div className="p-2 bg-emerald-500 rounded-xl text-white shadow-lg shadow-emerald-500/30 animate-pulse">
             <Sparkles className="h-5 w-5" />
           </div>
           <div>
-            <h1 className="text-lg font-bold tracking-tight bg-gradient-to-r from-indigo-500 to-purple-600 bg-clip-text text-transparent">PresenterCursor</h1>
+            <h1 className="text-lg font-bold tracking-tight bg-gradient-to-r from-emerald-500 to-teal-600 bg-clip-text text-transparent">PresenterCursor</h1>
             <p className="text-xs text-slate-500 dark:text-slate-400">プレゼンテーション支援ツール</p>
           </div>
         </div>
