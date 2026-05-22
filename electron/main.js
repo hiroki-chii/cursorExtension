@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, globalShortcut, desktopCapturer } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, globalShortcut, desktopCapturer, Tray, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -7,6 +7,7 @@ let overlayWindow = null;
 let hookInitialized = false;
 let isSettingsFocused = false;
 let isSettingsHovered = false;
+let tray = null; // タスクトレイアイコン用
 
 function updateSettingsState() {
   const isSettingsActive = isSettingsFocused || isSettingsHovered;
@@ -151,8 +152,47 @@ function createSettingsWindow() {
     settingsWindow = null;
     isSettingsFocused = false;
     updateSettingsState();
-    if (process.platform !== 'darwin') {
-      app.quit();
+    // タスクトレイに常駐するため、ここでは app.quit() を呼ばない
+  });
+}
+
+function createTray() {
+  if (tray) return;
+
+  const iconPath = path.join(__dirname, 'icon.ico');
+  tray = new Tray(iconPath);
+
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: '設定を開く',
+      click: () => {
+        if (settingsWindow) {
+          if (settingsWindow.isMinimized()) settingsWindow.restore();
+          settingsWindow.focus();
+        } else {
+          createSettingsWindow();
+        }
+      }
+    },
+    { type: 'separator' },
+    {
+      label: '終了',
+      click: () => {
+        app.quit();
+      }
+    }
+  ]);
+
+  tray.setToolTip('PresenterCursor');
+  tray.setContextMenu(contextMenu);
+
+  // ダブルクリックで設定画面を開く
+  tray.on('double-click', () => {
+    if (settingsWindow) {
+      if (settingsWindow.isMinimized()) settingsWindow.restore();
+      settingsWindow.focus();
+    } else {
+      createSettingsWindow();
     }
   });
 }
@@ -403,6 +443,7 @@ app.whenReady().then(() => {
   loadConfig();
   createSettingsWindow();
   createOverlayWindow();
+  createTray(); // タスクトレイを作成
   
   // uiohook-napi をロードしてフック開始
   setupGlobalHook();
@@ -512,9 +553,7 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  // タスクトレイに常駐するため、すべてのウィンドウが閉じられても終了しない
 });
 
 app.on('will-quit', () => {
@@ -525,4 +564,7 @@ app.on('will-quit', () => {
       uiohook.stop();
     }
   } catch (err) {}
+  if (tray) {
+    tray.destroy();
+  }
 });
