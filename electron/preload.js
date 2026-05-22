@@ -70,4 +70,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('settings-state-changed', subscription);
     return () => ipcRenderer.removeListener('settings-state-changed', subscription);
   },
+
+  // 画面キャプチャの要求
+  captureScreen: () => ipcRenderer.invoke('capture-screen'),
+
+  // グローバルホイールイベントの受信
+  onGlobalWheel: (callback) => {
+    const subscription = (event, data) => callback(data);
+    ipcRenderer.on('global-wheel', subscription);
+    return () => ipcRenderer.removeListener('global-wheel', subscription);
+  },
 });

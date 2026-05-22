@@ -34,6 +34,11 @@ export default function App() {
   const selectionStartRef = useRef(null);
   const [tempRect, setTempRect] = useState(null);
 
+  // ズーム用のステート/Ref
+  const [captureUrl, setCaptureUrl] = useState(null);
+  const captureImageRef = useRef(null);
+  const zoomScaleRef = useRef(2.0);
+
   useEffect(() => {
     isSettingsActiveRef.current = isSettingsActive;
     if (isSettingsActive) {
@@ -84,7 +89,7 @@ export default function App() {
       // グローバルキーイベントの同期 (キーキャスト & 各種制御)
       const unsubscribeKey = window.electronAPI.onGlobalKey((e) => {
         if (isSettingsActiveRef.current) return;
-        // Escキー (keycode 1) で通常のスポットライト・エリアスポットライト選択を解除/キャンセルする
+        // Escキー (keycode 1) で通常のスポットライト・エリアスポットライト選択・ズームを解除/キャンセルする
         if (e.keycode === 1) { // Esc
           let changed = false;
           const updatedConfig = { ...config };
@@ -101,6 +106,14 @@ export default function App() {
           if (config?.spotlight?.enabled) {
             updatedConfig.spotlight = {
               ...config.spotlight,
+              enabled: false
+            };
+            changed = true;
+          }
+
+          if (config?.zoom?.enabled) {
+            updatedConfig.zoom = {
+              ...config.zoom,
               enabled: false
             };
             changed = true;
@@ -137,6 +150,23 @@ export default function App() {
           visible: true,
           timestamp: Date.now()
         });
+      });
+
+      // グローバルホイールイベントの同期
+      const unsubscribeWheel = window.electronAPI.onGlobalWheel((data) => {
+        if (isSettingsActiveRef.current) return;
+        if (!config?.zoom?.enabled) return;
+
+        // rotation < 0 が奥へ（ズームイン）、rotation > 0 が手前へ（ズームアウト）
+        const direction = data.rotation < 0 ? 1 : -1;
+        const scaleStep = 0.2;
+
+        let newScale = zoomScaleRef.current + direction * scaleStep;
+        const minScale = config.zoom.minScale || 1.0;
+        const maxScale = config.zoom.maxScale || 5.0;
+        newScale = Math.max(minScale, Math.min(maxScale, newScale));
+
+        zoomScaleRef.current = newScale;
       });
 
       // 手書きクリアの同期 (allがtrueなら全クリア、falseなら1画消去/Undo)
@@ -178,6 +208,7 @@ export default function App() {
         unsubscribeConfig();
         unsubscribeMouse();
         unsubscribeKey();
+        unsubscribeWheel();
         unsubscribeClear();
         unsubscribeUndo();
         unsubscribeRedo();
@@ -185,6 +216,28 @@ export default function App() {
       };
     }
   }, [config]);
+
+  // ズーム（拡大鏡）有効時のスクリーンキャプチャ取得処理
+  useEffect(() => {
+    if (config?.zoom?.enabled) {
+      // 初期倍率にリセット
+      zoomScaleRef.current = config.zoom.scale || 2.0;
+
+      window.electronAPI.captureScreen().then((dataUrl) => {
+        if (dataUrl) {
+          const img = new Image();
+          img.src = dataUrl;
+          img.onload = () => {
+            captureImageRef.current = img;
+            setCaptureUrl(dataUrl); // レンダラーステートを更新して再描画
+          };
+        }
+      });
+    } else {
+      setCaptureUrl(null);
+      captureImageRef.current = null;
+    }
+  }, [config?.zoom?.enabled, config?.zoom?.scale]);
 
   // キーキャスト表示時間制御
   useEffect(() => {
@@ -232,6 +285,83 @@ export default function App() {
       if (isSettingsActive) {
         animationId = requestAnimationFrame(draw);
         return;
+      }
+
+      // 0.5. ズーム（拡大鏡）描画
+      if (config.zoom?.enabled && captureImageRef.current) {
+        const mx = mousePosRef.current.x;
+        const my = mousePosRef.current.y;
+        const r = config.zoom.radius || 150;
+        const scale = zoomScaleRef.current;
+
+        ctx.save();
+        // 拡大鏡の外側の影
+        ctx.beginPath();
+        ctx.arc(mx, my, r, 0, Math.PI * 2);
+        ctx.shadowBlur = 25;
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.05)';
+        ctx.fill();
+        ctx.restore();
+
+        // 拡大領域のクリップ
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(mx, my, r, 0, Math.PI * 2);
+        ctx.clip();
+
+        // キャプチャした画像を拡大して描画
+        const img = captureImageRef.current;
+        const rx = img.width / canvas.width;
+        const ry = img.height / canvas.height;
+
+        const sw = (r * 2 * rx) / scale;
+        const sh = (r * 2 * ry) / scale;
+        const sx = (mx * rx) - (sw / 2);
+        const sy = (my * ry) - (sh / 2);
+
+        const dx = mx - r;
+        const dy = my - r;
+        const dw = r * 2;
+        const dh = r * 2;
+
+        ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
+        ctx.restore();
+
+        // 拡大鏡のボーダー
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(mx, my, r, 0, Math.PI * 2);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(15, 23, 42, 0.15)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.restore();
+
+        // 拡大率のテキストバッジ
+        ctx.save();
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        
+        const badgeW = 54;
+        const badgeH = 20;
+        const badgeX = mx - badgeW / 2;
+        const badgeY = my + r - 32;
+        
+        ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 6);
+        ctx.fill();
+        ctx.stroke();
+        
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`${scale.toFixed(1)}x`, mx, badgeY + badgeH / 2);
+        ctx.restore();
       }
 
       // 1. スポットライト
@@ -548,7 +678,8 @@ export default function App() {
   };
 
   const isPenActive = config?.pen?.enabled;
-  const isInteractive = !isSettingsActive && (isPenActive || isAreaSelecting);
+  const isZoomActive = config?.zoom?.enabled;
+  const isInteractive = !isSettingsActive && (isPenActive || isAreaSelecting || isZoomActive);
 
   let cursorStyle = 'default';
   if (isPenActive) {

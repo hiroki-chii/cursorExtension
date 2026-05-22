@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, globalShortcut } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, globalShortcut, desktopCapturer } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -15,7 +15,7 @@ function updateSettingsState() {
     
     // 設定画面がアクティブな場合は、マウス透過を強制する（操作を妨げないため）
     const isAreaSelecting = config.areaSpotlight && config.areaSpotlight.enabled && !config.areaSpotlight.rect;
-    const ignoreMouse = isSettingsActive || (!config.pen.enabled && !isAreaSelecting);
+    const ignoreMouse = isSettingsActive || (!config.pen.enabled && !isAreaSelecting && !config.zoom.enabled);
     overlayWindow.setIgnoreMouseEvents(ignoreMouse, { forward: ignoreMouse });
   }
 }
@@ -56,6 +56,13 @@ const defaultConfig = {
     color: '#eab308',
     width: 4
   },
+  zoom: {
+    enabled: false,
+    radius: 150,
+    scale: 2.0,
+    minScale: 1.0,
+    maxScale: 5.0
+  },
   keycast: {
     enabled: false,
     duration: 2000
@@ -67,7 +74,8 @@ const defaultConfig = {
     clearDrawing: 'CommandOrControl+Shift+C',
     toggleAreaSpotlight: 'CommandOrControl+Shift+A',
     undoDrawing: 'CommandOrControl+Shift+Z',
-    redoDrawing: 'CommandOrControl+Shift+Y'
+    redoDrawing: 'CommandOrControl+Shift+Y',
+    toggleZoom: 'CommandOrControl+Shift+M'
   }
 };
 
@@ -87,6 +95,7 @@ function loadConfig() {
         laser: { ...defaultConfig.laser, ...loadedConfig.laser },
         ripple: { ...defaultConfig.ripple, ...loadedConfig.ripple },
         pen: { ...defaultConfig.pen, ...loadedConfig.pen },
+        zoom: { ...defaultConfig.zoom, ...loadedConfig.zoom },
         keycast: { ...defaultConfig.keycast, ...loadedConfig.keycast },
         shortcuts: { ...defaultConfig.shortcuts, ...loadedConfig.shortcuts }
       };
@@ -244,6 +253,17 @@ function setupGlobalHook() {
       }
     });
 
+    // マウスホイール入力（ズーム用）
+    uiohook.on('wheel', (e) => {
+      if (overlayWindow && !overlayWindow.isDestroyed()) {
+        overlayWindow.webContents.send('global-wheel', {
+          rotation: e.rotation,
+          amount: e.amount,
+          direction: e.direction
+        });
+      }
+    });
+
     uiohook.start();
     hookInitialized = true;
     console.log('グローバルインプットフックを起動しました');
@@ -348,6 +368,18 @@ function registerShortcuts() {
       console.error(`ショートカットの登録に失敗しました: ${config.shortcuts.redoDrawing}`, e);
     }
   }
+
+  // ズーム（拡大鏡）モード切り替え
+  if (config.shortcuts.toggleZoom) {
+    try {
+      globalShortcut.register(config.shortcuts.toggleZoom, () => {
+        config.zoom.enabled = !config.zoom.enabled;
+        notifyConfigUpdate();
+      });
+    } catch (e) {
+      console.error(`ショートカットの登録に失敗しました: ${config.shortcuts.toggleZoom}`, e);
+    }
+  }
 }
 
 // 設定変更の通知
@@ -362,7 +394,7 @@ function notifyConfigUpdate() {
     // 設定画面がアクティブ（フォーカス中、またはホバー中）なら完全に透過する
     const isSettingsActive = isSettingsFocused || isSettingsHovered;
     const isAreaSelecting = config.areaSpotlight && config.areaSpotlight.enabled && !config.areaSpotlight.rect;
-    const ignoreMouse = isSettingsActive || (!config.pen.enabled && !isAreaSelecting);
+    const ignoreMouse = isSettingsActive || (!config.pen.enabled && !isAreaSelecting && !config.zoom.enabled);
     overlayWindow.setIgnoreMouseEvents(ignoreMouse, { forward: ignoreMouse });
   }
 }
@@ -377,6 +409,59 @@ app.whenReady().then(() => {
   registerShortcuts();
 
   // IPCハンドラー登録
+  ipcMain.handle('capture-screen', async () => {
+    let overlayVisible = false;
+    let settingsVisible = false;
+
+    if (overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible()) {
+      overlayWindow.hide();
+      overlayVisible = true;
+    }
+
+    let settingsWasFocused = false;
+    if (settingsWindow && !settingsWindow.isDestroyed() && settingsWindow.isVisible() && !settingsWindow.isMinimized()) {
+      settingsWasFocused = settingsWindow.isFocused();
+      settingsWindow.hide();
+      settingsVisible = true;
+    }
+
+    // 画面からウィンドウが完全に消えるのを確実に待つ
+    if (overlayVisible || settingsVisible) {
+      await new Promise(resolve => setTimeout(resolve, 80));
+    }
+
+    try {
+      const primaryDisplay = screen.getPrimaryDisplay();
+      const { width, height } = primaryDisplay.bounds;
+      const scale = primaryDisplay.scaleFactor;
+      const sources = await desktopCapturer.getSources({
+        types: ['screen'],
+        thumbnailSize: {
+          width: Math.round(width * scale),
+          height: Math.round(height * scale)
+        }
+      });
+      if (sources.length > 0) {
+        return sources[0].thumbnail.toDataURL();
+      }
+      return null;
+    } catch (err) {
+      console.error('画面キャプチャの取得に失敗しました:', err);
+      return null;
+    } finally {
+      if (settingsVisible && settingsWindow && !settingsWindow.isDestroyed()) {
+        if (settingsWasFocused) {
+          settingsWindow.show();
+        } else {
+          settingsWindow.showInactive();
+        }
+      }
+      if (overlayVisible && overlayWindow && !overlayWindow.isDestroyed()) {
+        overlayWindow.showInactive();
+      }
+    }
+  });
+
   ipcMain.handle('get-config', () => {
     return config;
   });

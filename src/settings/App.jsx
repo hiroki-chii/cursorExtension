@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { 
   Sun, Moon, Monitor, Sparkles, Sliders, Trash2, Undo, Redo,
   MousePointer, Zap, Edit3, Keyboard, Info, Check, HelpCircle,
-  BoxSelect
+  BoxSelect, ZoomIn
 } from 'lucide-react';
 import { useTheme } from '../components/ThemeProvider';
 
@@ -585,6 +585,63 @@ export default function App() {
               </div>
             </div>
 
+            {/* ズーム（拡大鏡）設定 */}
+            <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-indigo-100 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-xl">
+                    <ZoomIn className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-800 dark:text-slate-100">ズーム（拡大鏡）機能</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">マウスポインター周辺を拡大表示します。ONの時にホイール回転でズーム変更が可能です</p>
+                  </div>
+                </div>
+                <Switch 
+                  checked={config.zoom?.enabled || false} 
+                  onChange={(val) => updateConfig('zoom', { enabled: val })} 
+                />
+              </div>
+
+              {config.zoom?.enabled && (
+                <div className="p-3 bg-indigo-50 dark:bg-indigo-950/20 text-indigo-800 dark:text-indigo-200 rounded-xl text-xs flex gap-2 items-start mb-4">
+                  <Info className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                  <div>
+                    ズームモードがONの時、マウスホイールを回すことでズームイン（奥へスクロール）およびズームアウト（手前へスクロール）が行えます。
+                    （Escキーでズームを解除できます）
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-4 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <div>
+                  <div className="flex justify-between text-xs mb-1 font-medium text-slate-600 dark:text-slate-300">
+                    <span>拡大鏡のサイズ（半径）</span>
+                    <span>{config.zoom?.radius || 150} px</span>
+                  </div>
+                  <input 
+                    type="range" min="100" max="300" step="10"
+                    value={config.zoom?.radius || 150}
+                    onChange={(e) => updateConfig('zoom', { radius: parseInt(e.target.value) })}
+                    className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-xs mb-1 font-medium text-slate-600 dark:text-slate-300">
+                    <span>初期の拡大倍率</span>
+                    <span>{(config.zoom?.scale || 2.0).toFixed(1)} x</span>
+                  </div>
+                  <input 
+                    type="range" min="1.0" max="5.0" step="0.2"
+                    value={config.zoom?.scale || 2.0}
+                    onChange={(e) => updateConfig('zoom', { scale: parseFloat(e.target.value) })}
+                    className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                  />
+                </div>
+              </div>
+            </div>
+
             {/* キーキャスト設定 */}
             <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm hover:shadow-md transition-shadow">
               <div className="flex items-center justify-between mb-4">
@@ -663,6 +720,13 @@ export default function App() {
                   <span className="text-sm font-medium text-slate-700 dark:text-slate-300">手書きペンのON/OFF</span>
                   <kbd className="px-2.5 py-1 bg-white dark:bg-slate-700 text-xs font-mono font-bold rounded-lg border border-slate-200 dark:border-slate-600 shadow-sm text-indigo-600 dark:text-indigo-400">
                     Ctrl + Shift + P
+                  </kbd>
+                </div>
+
+                <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/30 dark:border-slate-700/30">
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">ズーム（拡大鏡）のON/OFF</span>
+                  <kbd className="px-2.5 py-1 bg-white dark:bg-slate-700 text-xs font-mono font-bold rounded-lg border border-slate-200 dark:border-slate-600 shadow-sm text-indigo-600 dark:text-indigo-400">
+                    Ctrl + Shift + M
                   </kbd>
                 </div>
 
