@@ -13,6 +13,14 @@ const KEY_MAP = {
   3639: 'PrtScn', 70: 'ScrollLock', 3653: 'Pause', 3666: 'Insert', 3655: 'Home', 3657: 'PgUp', 3667: 'Delete', 3659: 'End', 3665: 'PgDn'
 };
 
+// トリガーキーマップ
+const TRIGGER_KEYS = {
+  'Shift': [42, 54],
+  'Alt': [56, 3640],
+  'Ctrl': [29, 3613],
+  'Space': [57]
+};
+
 export default function App() {
   const canvasRef = useRef(null);
   const [config, setConfig] = useState(null);
@@ -43,6 +51,10 @@ export default function App() {
   const captureImageRef = useRef(null);
   const zoomScaleRef = useRef(2.0);
 
+  // 手書きトリガーキーの押下状態
+  const [isTriggerKeyPressed, setIsTriggerKeyPressed] = useState(false);
+  const isTriggerKeyPressedRef = useRef(false);
+
   useEffect(() => {
     isSettingsActiveRef.current = isSettingsActive;
     if (isSettingsActive) {
@@ -50,6 +62,26 @@ export default function App() {
       ripplesRef.current = [];
     }
   }, [isSettingsActive]);
+
+  // ペンモードの有効/無効切り替え時に描画状態およびトリガー状態をリセット
+  useEffect(() => {
+    isDrawingRef.current = false;
+    currentStrokeRef.current = null;
+    if (isTriggerKeyPressedRef.current) {
+      isTriggerKeyPressedRef.current = false;
+      setIsTriggerKeyPressed(false);
+    }
+    
+    // 透過状態を同期
+    if (config) {
+      const isAreaSelecting = config.areaSpotlight?.enabled && !config.areaSpotlight?.rect;
+      const isZoomActive = config.zoom?.enabled;
+      const updatedIsInteractive = config.pen?.enabled || isAreaSelecting || isZoomActive || isRecordingGestureRef.current;
+      if (window.electronAPI) {
+        window.electronAPI.setIgnoreMouseEvents(!updatedIsInteractive, { forward: !updatedIsInteractive });
+      }
+    }
+  }, [config?.pen?.enabled]);
 
   useEffect(() => {
     if (window.electronAPI) {
@@ -152,6 +184,23 @@ export default function App() {
           if (config?.laser?.enabled) {
             laserHistoryRef.current.push({ x: e.x, y: e.y, time: Date.now() });
           }
+
+          // トリガーキーが押されている間の手書き描画（クリックなしでのマウス移動）
+          if (isDrawingRef.current && isTriggerKeyPressedRef.current && currentStrokeRef.current) {
+            const canvas = canvasRef.current;
+            if (canvas) {
+              const rect = canvas.getBoundingClientRect();
+              const x = e.x - rect.left;
+              const y = e.y - rect.top;
+              
+              const lastPoint = currentStrokeRef.current.points[currentStrokeRef.current.points.length - 1];
+              const dist = Math.hypot(x - lastPoint.x, y - lastPoint.y);
+              
+              if (dist > 1.5) {
+                currentStrokeRef.current.points.push({ x, y });
+              }
+            }
+          }
         } else if (e.type === 'down') {
           if (config?.ripple?.enabled) {
             const rippleColor = e.button === 1 
@@ -174,6 +223,70 @@ export default function App() {
       // グローバルキーイベントの同期 (キーキャスト & 各種制御)
       const unsubscribeKey = window.electronAPI.onGlobalKey((e) => {
         if (isSettingsActiveRef.current) return;
+
+        const type = e.type || 'down'; // 下位互換用
+
+        // 手書きトリガーキーの判定（手書きマーカーモードがONのときのみ有効）
+        const triggerKey = config?.pen?.triggerKey;
+        const isPenEnabled = config?.pen?.enabled;
+        if (isPenEnabled && triggerKey && triggerKey !== 'None') {
+          // 他の修飾キーが押されている場合はショートカット操作とみなし、一時的描画トリガーは無視する
+          const hasOtherModifiers = 
+            (triggerKey !== 'Shift' && e.shiftKey) ||
+            (triggerKey !== 'Ctrl' && e.ctrlKey) ||
+            (triggerKey !== 'Alt' && e.altKey) ||
+            e.metaKey;
+
+          const keycodes = TRIGGER_KEYS[triggerKey] || [];
+          if (keycodes.includes(e.keycode) && !hasOtherModifiers) {
+            const isDown = type === 'down';
+            if (isTriggerKeyPressedRef.current !== isDown) {
+              isTriggerKeyPressedRef.current = isDown;
+              setIsTriggerKeyPressed(isDown);
+
+              // 透過状態の即時更新
+              const isTriggerActive = isDown && isPenEnabled;
+              const isPenActive = isPenEnabled || isTriggerActive;
+              const isAreaSelecting = config.areaSpotlight?.enabled && !config.areaSpotlight?.rect;
+              const isZoomActive = config.zoom?.enabled;
+              const updatedIsInteractive = isPenActive || isAreaSelecting || isZoomActive || isRecordingGestureRef.current;
+              
+              if (window.electronAPI) {
+                window.electronAPI.setIgnoreMouseEvents(!updatedIsInteractive, { forward: !updatedIsInteractive });
+              }
+
+              // トリガーキー押下時：描画を開始する
+              if (isDown) {
+                isDrawingRef.current = true;
+                const canvas = canvasRef.current;
+                if (canvas) {
+                  const rect = canvas.getBoundingClientRect();
+                  const x = mousePosRef.current.x - rect.left;
+                  const y = mousePosRef.current.y - rect.top;
+                  currentStrokeRef.current = {
+                    points: [{ x, y }],
+                    color: config.pen.color || '#eab308',
+                    width: config.pen.width || 4
+                  };
+                }
+              } else {
+                // トリガーキー解放時：描画を終了する
+                if (isDrawingRef.current) {
+                  isDrawingRef.current = false;
+                  if (currentStrokeRef.current && currentStrokeRef.current.points.length >= 2) {
+                    strokesRef.current.push(currentStrokeRef.current);
+                    redoStrokesRef.current = []; // 履歴をクリア
+                  }
+                  currentStrokeRef.current = null;
+                }
+              }
+            }
+            return; // トリガーキー単体はキーキャストに表示しない
+          }
+        }
+
+        if (type !== 'down') return; // キーキャストはkeydownのみ表示
+
         // Escキー (keycode 1) で通常のスポットライト・エリアスポットライト選択・ズームを解除/キャンセルする
         if (e.keycode === 1) { // Esc
           let changed = false;
@@ -785,7 +898,8 @@ export default function App() {
     currentStrokeRef.current = null;
   };
 
-  const isPenActive = config?.pen?.enabled;
+  const isTriggerActive = config?.pen?.enabled && config.pen.triggerKey && config.pen.triggerKey !== 'None' && isTriggerKeyPressed;
+  const isPenActive = config?.pen?.enabled || isTriggerActive;
   const isZoomActive = config?.zoom?.enabled;
   const isInteractive = !isSettingsActive && (isPenActive || isAreaSelecting || isZoomActive || isRecordingGesture);
 

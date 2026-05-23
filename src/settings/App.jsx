@@ -649,6 +649,24 @@ export default function App() {
                   />
                 </div>
 
+                <div>
+                  <span className="text-xs font-medium text-slate-600 dark:text-slate-300 block mb-2">手書きトリガーキー</span>
+                  <select
+                    value={config.pen.triggerKey || 'None'}
+                    onChange={(e) => updateConfig('pen', { triggerKey: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-xl border border-slate-200 dark:border-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="None">なし (常に左クリックドラッグで手書き)</option>
+                    <option value="Shift">Shift キー (押しながらマウス移動で手書き)</option>
+                    <option value="Alt">Alt キー (押しながらマウス移動で手書き)</option>
+                    <option value="Ctrl">Ctrl キー (押しながらマウス移動で手書き)</option>
+                    <option value="Space">Space キー (押しながらマウス移動で手書き)</option>
+                  </select>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                    指定したキーを押している間、マウスを動かすだけで、クリックせずに線を描けます（※マーカーがONのときのみ有効）。
+                  </p>
+                </div>
+
                 <div className="pt-2 flex justify-end gap-2 flex-wrap">
                   <button
                     onClick={handleUndoDrawing}

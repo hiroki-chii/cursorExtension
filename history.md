@@ -182,14 +182,16 @@
   - 対策：`handleGestureResult` が設定変更の有無（`changed`）を boolean で返すように修正し、ジェスチャーによる設定変更が発生した場合は React 側での手動の `setIgnoreMouseEvents` をスキップし、メインプロセス側の `notifyConfigUpdate` の透過制御ロジックに任せるように修正。
   - アプリケーション全体のビルド検証およびポータブルアプリの再ビルド（`npm run electron:build`）を実行し、正常にビルドを完了。
 
-## 2026-05-23 12:20
+## 2026-05-23 16:55
+- トリガーキーによる手書き機能の設計と推奨キーの選定。
+- キーボードの `Alt` (推奨)、`Shift`、`Space`、`Ctrl` からトリガーキーを選択可能にする仕様を策定。
+- トリガーキー押下時に一時的に手書きモードに入り、クリック不要でマウス移動のみで線を描画できる機能を設計。
 - マウスジェスチャー操作の割り当てを手書きペン専用の機能にカスタマイズ。
   - `src/overlay/gestureRecognizer.js` を修正。Vの字テンプレート（`checkmark`）のみを残し、左右シェイク判定（`shake`）および、水平スワイプ判定（`rightToLeft`、`leftToRight`）を追加。
   - `src/overlay/App.jsx` を修正。判定されたジェスチャー（checkmark、shake、rightToLeft、leftToRight）を手書きペンのON/OFF、全クリア、Undo、Redoの各機能にマッピング。
   - `src/settings/App.jsx` を修正。ジェスチャー一覧およびショートカット解説カードの表記を新しいマッピングに更新。
   - アプリケーション全体のビルド検証およびポータブルアプリの再ビルド（`npm run electron:build`）を実行し、`dist-electron/PresenterCursor 1.0.0.exe` のパッケージングに成功。
 
-## 2026-05-23 12:25
 - ジェスチャー記録中（中ボタンクリック中）は手書きペンの描画機能が一時的にOFFになるよう修正。
   - 課題：手書きペンがONの状態で中ボタンをドラッグしてジェスチャーを行おうとすると、ジェスチャーの軌跡と同時に手書きの線も一緒に描かれてしまう問題。
   - 対策：`src/overlay/App.jsx` 内の `handlePointerDown` において、`isRecordingGestureRef.current` が `true` の場合、および `e.button !== 0`（左クリック以外）の場合に、ペンの描画処理を開始しないよう早期リターンするチェックを追加。また、`handlePointerMove` でも同様に `isRecordingGestureRef.current` の場合に描画点の追加処理をバイパスするよう修正。
@@ -200,5 +202,25 @@
   - 原因：`src/overlay/App.jsx` 内の `handleGestureResult` において、ローカルの `strokesRef.current` / `redoStrokesRef.current` 配列を直接操作した上で、さらに `window.electronAPI.triggerUndoDrawing` などの IPC を呼び出していたため。この IPC はメインプロセスを経由して自身（オーバーレイ）の `onUndoDrawing` リスナーを再度発火させ、結果的に二重に `pop` / `push` が実行されてしまっていた。
   - 対策：`handleGestureResult` でのローカル配列の直接操作を削除し、すべての操作を IPC 呼び出し（`triggerUndoDrawing` 等）のみに一本化。これにより、二重実行を綺麗に解消。
   - アプリケーション全体のビルド検証およびポータブルアプリの再ビルド（`npm run electron:build`）を実行し、`dist-electron/PresenterCursor 1.0.0.exe` のパッケージングに成功。
+
+## 2026-05-23 17:05
+- 手書き機能を左クリックに加え、トリガーキー（Shiftキー等）を押しながらでも行えるように拡張。
+  - `electron/main.js` に `keyup` グローバルイベント監視を追加し、キーの離上状態をオーバーレイへ通知するよう `global-key` イベントを拡張。また、`defaultConfig` の手書き設定に `triggerKey: 'Shift'` を追加。
+  - `src/overlay/App.jsx` でトリガーキーの押下状態（`isTriggerKeyPressed`）を検出し、押されている間は一時的に透過を解除し、マウスを動かすだけでクリック不要で描画を行える一時的描画ロジックを実装。
+  - `src/settings/App.jsx` に「手書きトリガーキー」の設定項目を追加。`Shift`, `Alt`, `Ctrl`, `Space`, `None` (なし) からユーザーが自由に選択可能にした。
+  - アプリケーション全体のビルド検証 (`npm run build`) およびポータブルアプリの再ビルド (`npm run electron:build`) を実行。
+
+## 2026-05-23 17:15
+- トリガーキーによる手書き機能を「手書きマーカーモードがONの時のみ有効」になるように制限。
+  - `src/overlay/App.jsx` 内のトリガーキー判定処理（`onGlobalKey` および `isPenActive` 判定）を修正し、`config.pen.enabled` が `true` の場合のみ処理を行うよう変更。
+  - `config.pen.enabled` が `false` になったときにトリガーキー押下状態（`isTriggerKeyPressed`）を自動的に強制リセットする `useEffect` を追加。
+  - `src/settings/App.jsx` の設定説明テキストに「※マーカーがONのときのみ有効」である旨の補足を追記。
+  - アプリケーション全体の再ビルドを実行。
+
+## 2026-05-23 17:22
+- `Ctrl + Shift + P` のショートカット実行時に、`Shift` キー入力が一時的描画トリガーとして誤判定され、手書きが暴走・上書き消去される不具合を修正。
+  - `src/overlay/App.jsx` 内のトリガーキー判定で、トリガーキー以外の修飾キー（`Ctrl` や `Alt` 等）が押されている場合はショートカット操作と見なして一時的描画トリガーを無視するよう `hasOtherModifiers` フィルタリングを追加。
+  - 手書きマーカーの有効/無効切り替え時に、内部の描画状態（`isDrawingRef.current`, `currentStrokeRef.current`）を強制初期化し、透過状態の同期も保証するように `useEffect` を強化。
+  - アプリケーション全体の再ビルドを実行。
 
 

@@ -14,10 +14,16 @@ function updateSettingsState() {
   if (overlayWindow && !overlayWindow.isDestroyed()) {
     overlayWindow.webContents.send('settings-state-changed', isSettingsActive);
     
-    // 設定画面がアクティブな場合は、マウス透過を強制する（操作を妨げないため）
-    const isAreaSelecting = config.areaSpotlight && config.areaSpotlight.enabled && !config.areaSpotlight.rect;
-    const ignoreMouse = isSettingsActive || (!config.pen.enabled && !isAreaSelecting && !config.zoom.enabled);
-    overlayWindow.setIgnoreMouseEvents(ignoreMouse, { forward: ignoreMouse });
+    // 設定画面がアクティブな場合は、マウス透過を強制する
+    if (isSettingsActive) {
+      overlayWindow.setIgnoreMouseEvents(true, { forward: true });
+    } else {
+      // 通常時は設定内容に合わせたデフォルトの透過状態を設定する。
+      // トリガーキーによる一時的な透過解除はオーバーレイ側で動的に行うため、ここでは上書きしない
+      const isAreaSelecting = config.areaSpotlight && config.areaSpotlight.enabled && !config.areaSpotlight.rect;
+      const ignoreMouse = !config.pen.enabled && !isAreaSelecting && !config.zoom.enabled;
+      overlayWindow.setIgnoreMouseEvents(ignoreMouse, { forward: ignoreMouse });
+    }
   }
 }
 
@@ -55,7 +61,8 @@ const defaultConfig = {
   pen: {
     enabled: false,
     color: '#eab308',
-    width: 4
+    width: 4,
+    triggerKey: 'Shift'
   },
   zoom: {
     enabled: false,
@@ -304,10 +311,25 @@ function setupGlobalHook() {
       }
     });
 
-    // キーボード入力（キーキャスト用）
+    // キーボード入力（キーキャスト用 & トリガーキー用）
     uiohook.on('keydown', (e) => {
       if (overlayWindow && !overlayWindow.isDestroyed()) {
         overlayWindow.webContents.send('global-key', {
+          type: 'down',
+          keycode: e.keycode,
+          ctrlKey: e.ctrlKey,
+          altKey: e.altKey,
+          shiftKey: e.shiftKey,
+          metaKey: e.metaKey
+        });
+      }
+    });
+
+    // キーボード入力解除
+    uiohook.on('keyup', (e) => {
+      if (overlayWindow && !overlayWindow.isDestroyed()) {
+        overlayWindow.webContents.send('global-key', {
+          type: 'up',
           keycode: e.keycode,
           ctrlKey: e.ctrlKey,
           altKey: e.altKey,
@@ -457,9 +479,13 @@ function notifyConfigUpdate() {
     
     // 設定画面がアクティブ（フォーカス中、またはホバー中）なら完全に透過する
     const isSettingsActive = isSettingsFocused || isSettingsHovered;
-    const isAreaSelecting = config.areaSpotlight && config.areaSpotlight.enabled && !config.areaSpotlight.rect;
-    const ignoreMouse = isSettingsActive || (!config.pen.enabled && !isAreaSelecting && !config.zoom.enabled);
-    overlayWindow.setIgnoreMouseEvents(ignoreMouse, { forward: ignoreMouse });
+    if (isSettingsActive) {
+      overlayWindow.setIgnoreMouseEvents(true, { forward: true });
+    } else {
+      const isAreaSelecting = config.areaSpotlight && config.areaSpotlight.enabled && !config.areaSpotlight.rect;
+      const ignoreMouse = !config.pen.enabled && !isAreaSelecting && !config.zoom.enabled;
+      overlayWindow.setIgnoreMouseEvents(ignoreMouse, { forward: ignoreMouse });
+    }
   }
 }
 
