@@ -223,4 +223,215 @@
   - 手書きマーカーの有効/無効切り替え時に、内部の描画状態（`isDrawingRef.current`, `currentStrokeRef.current`）を強制初期化し、透過状態の同期も保証するように `useEffect` を強化。
   - アプリケーション全体の再ビルドを実行。
 
+## 2026-05-23 21:19
+- 手書きマーカー（ペン）モードに不透明度調整機能を追加。
+  - **メインプロセスのデフォルト設定更新**: [main.js](file:///c:/Users/hirok/dev/cursorExtension/electron/main.js) 内の `defaultConfig.pen` に `opacity: 0.8` を追加。
+## 2026-05-21 19:05
+- ショートカットが効かない不具合に対応。
+- 原因：すでに存在する `config.json` を読み込む際、シャローコピーによるマージ（`{ ...defaultConfig, ...config }`）が行われていたため、ネストされた `shortcuts` オブジェクトや新規設定の `areaSpotlight` 構造が既存の設定ファイルに上書きされて消滅し、ショートカットの登録に失敗していた。
+- 対策：`electron/main.js` 内の `loadConfig` 関数を修正し、ネストされた設定オブジェクト（`shortcuts`, `areaSpotlight` 等）をそれぞれ個別にディープマージするように変更。
 
+## 2026-05-21 19:12
+- 設定画面のUI崩れの修正および、設定画面アクティブ時の挙動最適化。
+- **UI崩れの修正**: `src/settings/App.jsx` 内のエリアスポットライト設定カードにおいて、前回のマージで壊れていたJSX構文（タグの閉じ漏れ、項目の重複など）を綺麗に修正。トグルのON/OFFに関わらず詳細設定項目（不透明度、枠線色、枠線幅）が常に表示された状態へ復元。
+- **入力イベントの最適化**: 設定画面がアクティブ（フォーカス中またはホバー中）の時、オーバーレイ描画側 (`src/overlay/App.jsx`) でグローバル入力イベント（マウス移動、クリック、打鍵）を完全に無視して早期リターンするよう修正。これにより、設定画面上でのマウス操作やクリックによって裏側でレーザーの軌跡やクリック波紋が蓄積されず、設定画面からマウスを外した瞬間に不自然な残像エフェクトが表示される現象を解消。
+- **エフェクトのクリア**: 設定画面がアクティブになった瞬間に、それまで残っていたレーザー履歴や波紋履歴を明示的にクリアするロジックを実装。
+
+## 2026-05-21 19:22
+- スポットライトのEsc解除対応および手書きメモの一画消去（Undo）機能の実装。
+- **通常のスポットライトのEsc解除**: `src/overlay/App.jsx` 内のグローバルキー監視において、Escキー（`keycode: 1`）押下時に、エリアスポットライトと同様に通常のスポットライト（`config.spotlight.enabled`）も無効化（OFF）するように拡張。両機能が有効な場合、Escキーひとつで両方を一斉解除可能。
+- **手書きメモの一画消去（Undo）**:
+  - `electron/preload.js`, `electron/main.js`, `src/overlay/App.jsx` の `clear-drawing` IPC処理を拡張し、一括削除フラグ（`all`）を追加。
+  - グローバルショートカット `Ctrl + Shift + C` の動作を「一画消去（Undo）」に変更（`strokesRef.current.pop()` を実行）。
+  - 設定画面 (`src/settings/App.jsx`) に「最後の1画を消去 (Undo)」と「すべてクリア」の2つのボタンを配置。それぞれ1画ずつの削除と全クリアをトリガー可能に。
+
+## 2026-05-21 19:27
+- 手書きメモの「戻る (Undo)」および「やり直し (Redo)」機能の実装。
+- **ショートカットの割り当て**:
+  - アンドゥ（戻る）: `Ctrl + Shift + Z`（設定値 `undoDrawing`）
+  - リドゥ（やり直し）: `Ctrl + Shift + Y`（設定値 `redoDrawing`）
+  - 手書きクリア `Ctrl + Shift + C` は、当初の「手書きの全クリア」に機能を差し戻し。
+- **アンドゥ・リドゥロジックの実装**:
+  - `electron/preload.js` および `electron/main.js` でアンドゥ/リドゥ用のシグナル/IPCを新規設定。
+  - `src/overlay/App.jsx` 内にやり直しスタック（`redoStrokesRef`）を定義。
+  - アンドゥ時には `strokesRef` からストロークを `pop` して `redoStrokesRef` に `push` して描画。
+  - リドゥ時には `redoStrokesRef` からストロークを `pop` して `strokesRef` に戻して描画。
+  - 新たにフリーハンドで線を描いたタイミング（`handlePointerUp`）で、Redoスタック（`redoStrokesRef`）をクリアするように調整。
+- **設定UIの拡張**:
+  - ペン設定セクションに「戻る (Undo)」および「やり直し (Redo)」の個別ボタンを追加。
+  - ショートカット説明一覧に `Ctrl + Shift + Z` および `Ctrl + Shift + Y` の解説を追記。
+
+## 2026-05-21 19:30
+- `/rebuild-overwrite` に基づくポータブルアプリの再ビルド。
+- 既存の `dist-electron` ディレクトリをクリアし、`npm run electron:build` を実行。
+- フロントエンドのアセットビルド、アプリアイコンの再生成、および `electron-builder` によるWindowsポータブルパッケージ（`dist-electron/PresenterCursor 1.0.0.exe`）のビルドが正常に完了したことを確認。
+
+## 2026-05-21 19:38
+- 「ペン」モードおよび「エリアスポットライト」モード有効時に、動作中であることを視覚的に判別できるインジケータ機能を実装。
+  - **画面右上のフローティングバッジ**:
+    - ペンモードおよびエリアスポットライトの有効・無効、および各状態（選択中/確定後など）を明示するガラスモフィズム（磨りガラス）バッジをオーバーレイ画面の右上にスライド表示。
+    - バッジ内に解除方法のショートカットキー（Ctrl+Shift+P, Ctrl+Shift+A, Esc等）を表示し、ユーザーの迷いを低減。
+  - **マウスカーソル追従型の視覚エフェクト (Canvas)**:
+    - ペンモード時は、カーソル位置の右下に小さなペンマーク（✏️）付きの黄色いミニドットが追従して描画されるように対応。
+    - エリアスポットライトの範囲選択（ドラッグ前・選択中）は、カーソル位置の右下に照準マーク（⛶）付きの青いミニドットが追従して描画されるように対応。
+    - 描画や選択の妨げにならないように、設定画面アクティブ時はこれら追従エフェクトが自動的に非表示になるよう制御。
+  - **CSSによるカーソル形状の変更**:
+    - ペンモードおよびエリアスポットライト選択中は、オーバーレイ上のマウスカーソルが標準の矢印から十字（`crosshair`）に変化し、ドラッグおよび描写が行いやすいように改善。
+  - **アニメーションの追加** (`src/overlay/App.css`): バッジ出現時のスムーズなフェードイン・スライドダウンアニメーション (`animate-fade-in`) を実装。
+  - **ビルドの実行**: `/rebuild-overwrite` に基づくポータブルアプリの上書きビルドを再実行。新機能（判別インジケータ等）を反映したポータブル実行ファイル (`dist-electron/PresenterCursor 1.0.0.exe`) のビルドが正常に完了したことを確認。
+
+## 2026-05-21 19:55
+- 右上のフローティングバッジ（ステータスインジケーターバッジ）が不要とのフィードバックに基づき、`src/overlay/App.jsx` から右上バッジ表示 of JSXコードを完全に削除。
+- マウスカーソル追従型のミニインジケーター（✏️、⛶）および `crosshair`（十字）へのカーソル形状変更のみでシンプルに動作中であることを判別できるよう最適化。
+- **ビルドの実行**: `/rebuild-overwrite` に基づくポータブルアプリの上書きビルドを再実行。バッジ表示を削除した最適化バージョンをWindowsポータブルパッケージ（`dist-electron/PresenterCursor 1.0.0.exe`）として正常に再ビルド完了。
+
+## 2026-05-22 10:18
+- ショートカットキー（`Ctrl + Shift + M`）によるズーム（拡大鏡）モードおよびマウスホイールによる拡大・縮小機能の追加。
+  - `electron/preload.js` に `captureScreen` IPC呼び出しと `onGlobalWheel` リスナーを追加。
+  - `electron/main.js` に `zoom` 設定、`toggleZoom` ショートカット、`capture-screen` ハンドラー（キャプチャ時の一時非表示制御）、および `uiohook` の `wheel` イベント監視処理を追加。
+  - `src/overlay/App.jsx` に画面キャプチャを使用した Canvas 拡大鏡描画ロジックと、ホイール回転による倍率変更ロジックを実装。
+  - `src/settings/App.jsx` に ズーム設定カードおよびショートカット一覧の追加。
+
+## 2026-05-22 10:25
+- ズーム（拡大鏡）撮影時に設定画面（`settingsWindow`）が映り込んでしまう不具合を修正。
+  - `electron/main.js` 内の `capture-screen` ハンドラーを拡張し、撮影時に `overlayWindow` だけでなく `settingsWindow` も一時的に非表示（`hide`）にし、撮影完了後に再表示（`show`）するように制御を修正。
+  - ウィンドウが画面から完全に消えるのを保証するため、非表示後の待機時間を 50ms から 80ms に調整。
+
+## 2026-05-22 10:34
+- ショートカット操作時に設定画面が前面に表示されフォーカスを奪ってしまう不具合を修正。
+  - `electron/main.js` の `capture-screen` 処理において、設定画面が現在アクティブ（`isSettingsFocused` が `true`）であった場合のみ撮影後に `show()` でフォーカスを戻し、アクティブでなかった場合は `showInactive()` を用いてフォーカスを奪わずに再表示するように変更。
+  - 設定画面が最小化されている（`isMinimized()`）場合は撮影時に映り込まないため、一時非表示の対象から除外。
+
+## 2026-05-22 10:35
+- 上記のポップアップおよびフォーカス奪取の不具合修正コードを `electron/main.js` に実際に適用・確認。
+  - `settingsWindow.isFocused()` の状態に基づき、キャプチャ後の再表示時に `show()` / `showInactive()` を切り替える制御を適用。
+  - 最小化状態（`settingsWindow.isMinimized()`）のときは一時非表示および復元の対象外とすることで、勝手に最小化が解除される不具合を修正。
+
+## 2026-05-22 10:41
+- ズーム（拡大鏡）モード有効時に、マウスカーソル横に追従して表示されていた虫眼鏡マーク（🔍）の描画処理を `src/overlay/App.jsx` から削除。
+  - 画面自体がズームされている時点で状態が判別可能であるため、不要な表示として削除し、カーソル周囲をクリーンにした。
+
+## 2026-05-22 10:43
+- ズーム（拡大鏡）モード有効時にOS標準の通常マウスカーソルが消えないように修正。
+  - `src/overlay/App.jsx` 内でズーム有効時に `cursorStyle` を `none` に切り替えていた処理を削除し、デフォルトのカーソル形状（`default`）を維持するように変更。
+
+## 2026-05-22 10:48
+- アプリケーションの上書き再ビルド（`/rebuild-overwrite`）を実行。
+  - `dist-electron` ディレクトリをクリーンアップした上で `npm run electron:build` を実行。フロントエンドのビルド、アプリアイコン生成、および `electron-builder` による Windows 用ポータブル実行ファイル `dist-electron/PresenterCursor 1.0.0.exe` のパッケージングがエラーなく正常に完了したことを確認。
+
+## 2026-05-22 16:22
+- アプリケーションのタスクトレイ常駐化と右クリックからの設定メニュー表示機能を実装。
+  - `electron/main.js` に `Tray` と `Menu` モジュールを導入し、トレイアイコンを生成。
+  - 設定ウィンドウが閉じられてもアプリ全体が終了しないように、`settingsWindow` の `closed` イベントおよび `app` の `window-all-closed` イベントの挙動を修正（バックグラウンドで常駐化）。
+  - トレイアイコンの右クリックメニュー（「設定を開く」、「終了」）およびダブルクリックからの設定ウィンドウの復元/再生成処理を実装。
+  - `will-quit` イベント発生時にトレイオブジェクトを破棄（`tray.destroy()`）するクリーンアップ処理を追加。
+  - `scripts/make-ico.js` を修正し、ビルド時に自動で生成される `icon.ico` を `electron/icon.ico` にも同時に書き出すように変更。
+  - `build/icon.ico` を `electron/icon.ico` にコピーし、開発中およびビルド後の実行ファイルの両方でトレイアイコンが正常に読み込める状態を構築。
+
+## 2026-05-22 16:38
+- 設定画面ヘッダーに「全機能OFF」ボタンを追加。
+  - スポットライト、エリアスポットライト、レーザー、クリックインジケーター、手書きペン、ズーム、キーキャストの全機能を一括でOFF（`enabled: false`）にする機能。
+  - いずれかの機能がONの時のみ赤色のアクティブ状態になり、すべてOFFのときはグレーアウトして無効化（`disabled`）する動的デザインを導入。
+  - アイコンに `Power` を使用し、直感的でモダンなUIを構築。
+  - レイアウトの崩れ（ラッパー `div` の閉じタグ `</div>` 不足による JSX コンパイルエラー）を修正。
+
+## 2026-05-22 16:52
+- アプリのロゴを緑基調（エメラルド/ティール）に変更。
+  - `generate_image` を使用して、緑色のモダンなアプリアイコン画像を生成。
+  - 生成画像（JPEG）を .NET の `System.Drawing` を利用した PowerShell スクリプトで正規の PNG 形式 (`build/icon.png`) にデコード・再保存。
+  - `node scripts/make-ico.js` を実行し、`build/icon.ico` および `electron/icon.ico` を緑基調の新しいアイコンファイルに上書き更新。
+  - 設定画面 (`src/settings/App.jsx`) ヘッダーのロゴマーク背景色を `bg-indigo-500` から `bg-emerald-500` (影も `shadow-emerald-500/30` に変更) に、またタイトル `PresenterCursor` の文字グラデーションを `from-emerald-500 to-teal-600` の緑基調に変更。
+
+## 2026-05-22 16:57
+- アプリケーションの上書き再ビルド（`/rebuild-overwrite`）を実行。
+  - `dist-electron` ディレクトリをクリーンアップした上で `npm run electron:build` を実行。緑基調の新アイコンやUI配色が適用された Windows 用ポータブル実行ファイル `dist-electron/PresenterCursor 1.0.0.exe` のパッケージングがエラーなく完了。
+
+## 2026-05-23 11:50
+- ジェスチャーによる機能ON/OFFの実現可能性についての検討。
+  - 現在は未実装である旨を確認。
+  - `uiohook-napi` によるグローバルマウスイベント監視機能を用いて、特定のボタン押下中のマウス軌跡をサンプリングし、形状（円や往復、特定の文字など）を判定することで実装可能であることを整理。
+
+## 2026-05-23 11:52
+- 右クリック単体でのジェスチャートリガーの実現可能性と制限についての検討。
+  - `uiohook-napi` はイベントの監視（パッシブフック）のみ可能で、OSの標準イベントをブロック（アクティブフック）できないため、右クリックでジェスチャーを行うと他のアプリでコンテキストメニューが表示されてしまう制限を整理。
+  - 代替案として「Ctrl / Alt + 右クリック」「中ボタン（ホイールクリック）」「特定のキーを押しながらのドラッグ」などの干渉の少ないトリガー方法を検討。
+
+## 2026-05-23 11:55
+- マウス中ボタン長押しジェスチャー機能の要件定義を開始（`/grill-me`）。
+  - ジェスチャーの種類と機能割り当てについてヒアリングを開始。
+  - ユーザー回答：「◯（円）を描く＝スポットライト ON/OFF、左右にシェイク（振る）＝全機能OFF、その他は固定ジェスチャー」に決定。
+  - 軌跡描画仕様：「薄く軌跡を描画し、判定後に消去する」に決定。
+
+## 2026-05-23 12:00
+- マウス中ボタン長押しジェスチャー機能の設計・実装。
+  - `src/overlay/gestureRecognizer.js` を新規作成し、簡易 $1 認識アルゴリズムとシェイク検知ロジックを実装。
+  - `electron/main.js` で `uiohook-napi` の `mouseup` イベント監視を追加し、マウスボタンリリースイベントをオーバーレイへ透過。また、`gesture` のデフォルト設定を追加。
+  - `src/overlay/App.jsx` を修正。中ボタンのドラッグを監視してジェスチャーの軌跡を蓄積・薄く描画し、ボタンリリース時にジェスチャー判定（◯、↔、Z、V、□）を行って対応する機能をトグルするロジックを統合。
+  - `src/settings/App.jsx` にジェスチャー機能の有効/無効トグルおよびジェスチャーと機能の対応表（「描画 & アシスト」タブ内と「ショートカット」タブ内）を追加。
+  - アプリケーション全体のビルド検証 (`npm run build`) を実行し、ビルドが成功することを確認。
+  - `/rebuild-overwrite` に基づきポータブルアプリケーションのビルド (`npm run electron:build`) を実行し、`dist-electron/PresenterCursor 1.0.0.exe` のパッケージングに成功。
+
+## 2026-05-23 12:14
+- ジェスチャーで手書きペンをONにした際、実際に線が描画できないバグを修正。
+  - 原因：ジェスチャー終了時の `mouseup` 処理において、クロージャにキャプチャされた古い `config`（トグル前の `pen.enabled = false`）をベースに `setIgnoreMouseEvents` の判定と同期が行われてしまい、最新のトグル結果（`true`）が上書き透過されてしまっていたこと。
+  - 対策：`handleGestureResult` が設定変更の有無（`changed`）を boolean で返すように修正し、ジェスチャーによる設定変更が発生した場合は React 側での手動の `setIgnoreMouseEvents` をスキップし、メインプロセス側の `notifyConfigUpdate` の透過制御ロジックに任せるように修正。
+  - アプリケーション全体のビルド検証およびポータブルアプリの再ビルド（`npm run electron:build`）を実行し、正常にビルドを完了。
+
+## 2026-05-23 16:55
+- トリガーキーによる手書き機能の設計と推奨キーの選定。
+- キーボードの `Alt` (推奨)、`Shift`、`Space`、`Ctrl` からトリガーキーを選択可能にする仕様を策定。
+- トリガーキー押下時に一時的に手書きモードに入り、クリック不要でマウス移動のみで線を描画できる機能を設計。
+- マウスジェスチャー操作の割り当てを手書きペン専用の機能にカスタマイズ。
+  - `src/overlay/gestureRecognizer.js` を修正。Vの字テンプレート（`checkmark`）のみを残し、左右シェイク判定（`shake`）および、水平スワイプ判定（`rightToLeft`、`leftToRight`）を追加。
+  - `src/overlay/App.jsx` を修正。判定されたジェスチャー（checkmark、shake、rightToLeft、leftToRight）を手書きペンのON/OFF、全クリア、Undo、Redoの各機能にマッピング。
+  - `src/settings/App.jsx` を修正。ジェスチャー一覧およびショートカット解説カードの表記を新しいマッピングに更新。
+  - アプリケーション全体のビルド検証およびポータブルアプリの再ビルド（`npm run electron:build`）を実行し、`dist-electron/PresenterCursor 1.0.0.exe` のパッケージングに成功。
+
+- ジェスチャー記録中（中ボタンクリック中）は手書きペンの描画機能が一時的にOFFになるよう修正。
+  - 課題：手書きペンがONの状態で中ボタンをドラッグしてジェスチャーを行おうとすると、ジェスチャーの軌跡と同時に手書きの線も一緒に描かれてしまう問題。
+  - 対策：`src/overlay/App.jsx` 内の `handlePointerDown` において、`isRecordingGestureRef.current` が `true` の場合、および `e.button !== 0`（左クリック以外）の場合に、ペンの描画処理を開始しないよう早期リターンするチェックを追加。また、`handlePointerMove` でも同様に `isRecordingGestureRef.current` の場合に描画点の追加処理をバイパスするよう修正。
+  - アプリケーション全体のビルド検証およびポータブルアプリの再ビルド（`npm run electron:build`）を実行し、`dist-electron/PresenterCursor 1.0.0.exe` のパッケージングに成功。
+
+## 2026-05-23 12:30
+- ジェスチャー操作時に Undo/Redo/Clear が2画ずつ（二重に）実行されてしまうバグを修正。
+  - 原因：`src/overlay/App.jsx` 内の `handleGestureResult` において、ローカルの `strokesRef.current` / `redoStrokesRef.current` 配列を直接操作した上で、さらに `window.electronAPI.triggerUndoDrawing` などの IPC を呼び出していたため。この IPC はメインプロセスを経由して自身（オーバーレイ）の `onUndoDrawing` リスナーを再度発火させ、結果的に二重に `pop` / `push` が実行されてしまっていた。
+  - 対策：`handleGestureResult` でのローカル配列の直接操作を削除し、すべての操作を IPC 呼び出し（`triggerUndoDrawing` 等）のみに一本化。これにより、二重実行を綺麗に解消。
+  - アプリケーション全体のビルド検証およびポータブルアプリの再ビルド（`npm run electron:build`）を実行し、`dist-electron/PresenterCursor 1.0.0.exe` のパッケージングに成功。
+
+## 2026-05-23 17:05
+- 手書き機能を左クリックに加え、トリガーキー（Shiftキー等）を押しながらでも行えるように拡張。
+  - `electron/main.js` に `keyup` グローバルイベント監視を追加し、キーの離上状態をオーバーレイへ通知するよう `global-key` イベントを拡張。また、`defaultConfig` の手書き設定に `triggerKey: 'Shift'` を追加。
+  - `src/overlay/App.jsx` でトリガーキーの押下状態（`isTriggerKeyPressed`）を検出し、押されている間は一時的に透過を解除し、マウスを動かすだけでクリック不要で描画を行える一時的描画ロジックを実装。
+  - `src/settings/App.jsx` に「手書きトリガーキー」の設定項目を追加。`Shift`, `Alt`, `Ctrl`, `Space`, `None` (なし) からユーザーが自由に選択可能にした。
+  - アプリケーション全体のビルド検証 (`npm run build`) およびポータブルアプリの再ビルド (`npm run electron:build`) を実行。
+
+## 2026-05-23 17:15
+- トリガーキーによる手書き機能を「手書きマーカーモードがONの時のみ有効」になるように制限。
+  - `src/overlay/App.jsx` 内のトリガーキー判定処理（`onGlobalKey` および `isPenActive` 判定）を修正し、`config.pen.enabled` が `true` の場合のみ処理を行うよう変更。
+  - `config.pen.enabled` が `false` になったときにトリガーキー押下状態（`isTriggerKeyPressed`）を自動的に強制リセットする `useEffect` を追加。
+  - `src/settings/App.jsx` の設定説明テキストに「※マーカーがONのときのみ有効」である旨の補足を追記。
+  - アプリケーション全体の再ビルドを実行。
+
+## 2026-05-23 17:22
+- `Ctrl + Shift + P` のショートカット実行時に、`Shift` キー入力が一時的描画トリガーとして誤判定され、手書きが暴走・上書き消去される不具合を修正。
+  - `src/overlay/App.jsx` 内のトリガーキー判定で、トリガーキー以外の修飾キー（`Ctrl` や `Alt` 等）が押されている場合はショートカット操作と見なして一時的描画トリガーを無視するよう `hasOtherModifiers` フィルタリングを追加。
+  - 手書きマーカーの有効/無効切り替え時に、内部の描画状態（`isDrawingRef.current`, `currentStrokeRef.current`）を強制初期化し、透過状態の同期も保証するように `useEffect` を強化。
+  - アプリケーション全体の再ビルドを実行。
+
+## 2026-05-23 21:19
+- 手書きマーカー（ペン）モードに不透明度調整機能を追加。
+  - **メインプロセスのデフォルト設定更新**: [main.js](file:///c:/Users/hirok/dev/cursorExtension/electron/main.js) 内の `defaultConfig.pen` に `opacity: 0.8` を追加。
+  - **オーバーレイ描画の修正**: [App.jsx](file:///c:/Users/hirok/dev/cursorExtension/src/overlay/App.jsx) 内で手書きストロークオブジェクトに不透明度情報 (`opacity`) を保存し、Canvas描画の際に `ctx.save()`, `ctx.restore()` で囲みつつ `ctx.globalAlpha = stroke.opacity` を適用するように修正。
+  - **設定画面UIの追加**: [App.jsx](file:///c:/Users/hirok/dev/cursorExtension/src/settings/App.jsx) の手書きペン設定箇所に「ペンの不透明度」を変更できるスライダー（`input type="range"`, 0.1〜1.0）を追加。
+  - **不具合修復**: 編集時の誤削除によるファイル破損（Vite起動エラー、Electron起動時の app.asar 破損）を Git 復旧して正しく再実装。
+  - **ビルドの実行**: `npm run electron:build` を実行し、ポータブル実行ファイルの再ビルドを確認。
+
+## 2026-05-23 21:42
+- 設定画面の「全機能OFF」機能に「マウスジェスチャー機能」も含めるように拡張。
+  - **全機能OFFロジックの修正**: [App.jsx](file:///c:/Users/hirok/dev/cursorExtension/src/settings/App.jsx) 内の `anyEnabled` 条件に `config.gesture.enabled` を追加。また、`handleAllOff` 関数内で `gesture` 設定の `enabled: false` を一括適用するように修正。
+  - **ビルドの実行**: `npm run electron:build` を実行し、ポータブル実行ファイルを再ビルド。
+
+## 2026-05-23 21:53
+- 設定画面のウィンドウ幅を固定（`650px`）に変更。
+  - **ウィンドウ設定の修正**: [main.js](file:///c:/Users/hirok/dev/cursorExtension/electron/main.js) 内の `createSettingsWindow` において、`minWidth` を `650` に、さらに `maxWidth` を `650` に設定し、ユーザーがウィンドウ幅を変更できないように制御（高さはリサイズ可能）。
+  - **ビルドの実行**: `npm run electron:build` を実行し、ポータブル実行ファイルを再ビルド。

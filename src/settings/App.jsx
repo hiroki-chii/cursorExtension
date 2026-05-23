@@ -83,7 +83,8 @@ export default function App() {
     config.ripple?.enabled ||
     config.pen?.enabled ||
     config.zoom?.enabled ||
-    config.keycast?.enabled
+    config.keycast?.enabled ||
+    config.gesture?.enabled
   );
 
   const handleAllOff = () => {
@@ -96,7 +97,8 @@ export default function App() {
       ripple: { ...config.ripple, enabled: false },
       pen: { ...config.pen, enabled: false },
       zoom: { ...config.zoom, enabled: false },
-      keycast: { ...config.keycast, enabled: false }
+      keycast: { ...config.keycast, enabled: false },
+      gesture: { ...config.gesture, enabled: false }
     };
     setConfig(updated);
     if (window.electronAPI) {
@@ -650,17 +652,30 @@ export default function App() {
                 </div>
 
                 <div>
+                  <div className="flex justify-between text-xs mb-1 font-medium text-slate-600 dark:text-slate-300">
+                    <span>ペンの不透明度</span>
+                    <span>{Math.round((config.pen.opacity ?? 0.8) * 100)} %</span>
+                  </div>
+                  <input
+                    type="range" min="0.1" max="1.0" step="0.05"
+                    value={config.pen.opacity ?? 0.8}
+                    onChange={(e) => updateConfig('pen', { opacity: parseFloat(e.target.value) })}
+                    className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                  />
+                </div>
+
+                <div>
                   <span className="text-xs font-medium text-slate-600 dark:text-slate-300 block mb-2">手書きトリガーキー</span>
                   <select
                     value={config.pen.triggerKey || 'None'}
                     onChange={(e) => updateConfig('pen', { triggerKey: e.target.value })}
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-xl border border-slate-200 dark:border-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   >
-                    <option value="None">なし (常に左クリックドラッグで手書き)</option>
-                    <option value="Shift">Shift キー (押しながらマウス移動で手書き)</option>
-                    <option value="Alt">Alt キー (押しながらマウス移動で手書き)</option>
-                    <option value="Ctrl">Ctrl キー (押しながらマウス移動で手書き)</option>
-                    <option value="Space">Space キー (押しながらマウス移動で手書き)</option>
+                    <option value="None">左クリックのみ</option>
+                    <option value="Shift">Shift or 左クリック</option>
+                    <option value="Alt">Alt or 左クリック</option>
+                    <option value="Ctrl">Ctrl or 左クリック</option>
+                    <option value="Space">Space or 左クリック</option>
                   </select>
                   <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
                     指定したキーを押している間、マウスを動かすだけで、クリックせずに線を描けます（※マーカーがONのときのみ有効）。

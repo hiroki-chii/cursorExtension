@@ -62,7 +62,8 @@ const defaultConfig = {
     enabled: false,
     color: '#eab308',
     width: 4,
-    triggerKey: 'Shift'
+    triggerKey: 'Shift',
+    opacity: 0.8
   },
   zoom: {
     enabled: false,
@@ -132,7 +133,8 @@ function createSettingsWindow() {
   settingsWindow = new BrowserWindow({
     width: 650,
     height: 800,
-    minWidth: 500,
+    minWidth: 650,
+    maxWidth: 650,
     minHeight: 600,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

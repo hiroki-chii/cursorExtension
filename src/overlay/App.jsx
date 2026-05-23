@@ -266,7 +266,8 @@ export default function App() {
                   currentStrokeRef.current = {
                     points: [{ x, y }],
                     color: config.pen.color || '#eab308',
-                    width: config.pen.width || 4
+                    width: config.pen.width || 4,
+                    opacity: config.pen.opacity !== undefined ? config.pen.opacity : 0.8
                   };
                 }
               } else {
@@ -647,26 +648,32 @@ export default function App() {
         // 過去の線
         strokesRef.current.forEach(stroke => {
           if (stroke.points.length < 2) return;
+          ctx.save();
           ctx.strokeStyle = stroke.color;
           ctx.lineWidth = stroke.width;
+          ctx.globalAlpha = stroke.opacity !== undefined ? stroke.opacity : 0.8;
           ctx.beginPath();
           ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
           for (let i = 1; i < stroke.points.length; i++) {
             ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
           }
           ctx.stroke();
+          ctx.restore();
         });
 
         // 現在描いている線
         if (currentStrokeRef.current && currentStrokeRef.current.points.length >= 2) {
+          ctx.save();
           ctx.strokeStyle = currentStrokeRef.current.color;
           ctx.lineWidth = currentStrokeRef.current.width;
+          ctx.globalAlpha = currentStrokeRef.current.opacity !== undefined ? currentStrokeRef.current.opacity : 0.8;
           ctx.beginPath();
           ctx.moveTo(currentStrokeRef.current.points[0].x, currentStrokeRef.current.points[0].y);
           for (let i = 1; i < currentStrokeRef.current.points.length; i++) {
             ctx.lineTo(currentStrokeRef.current.points[i].x, currentStrokeRef.current.points[i].y);
           }
           ctx.stroke();
+          ctx.restore();
         }
         ctx.restore();
       }
@@ -831,7 +838,8 @@ export default function App() {
     currentStrokeRef.current = {
       points: [{ x, y }],
       color: config.pen.color || '#eab308',
-      width: config.pen.width || 4
+      width: config.pen.width || 4,
+      opacity: config.pen.opacity !== undefined ? config.pen.opacity : 0.8
     };
   };
 
