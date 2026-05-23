@@ -68,6 +68,9 @@ const defaultConfig = {
     enabled: false,
     duration: 2000
   },
+  gesture: {
+    enabled: true
+  },
   shortcuts: {
     toggleSpotlight: 'CommandOrControl+Shift+S',
     toggleLaser: 'CommandOrControl+Shift+L',
@@ -98,6 +101,7 @@ function loadConfig() {
         pen: { ...defaultConfig.pen, ...loadedConfig.pen },
         zoom: { ...defaultConfig.zoom, ...loadedConfig.zoom },
         keycast: { ...defaultConfig.keycast, ...loadedConfig.keycast },
+        gesture: { ...defaultConfig.gesture, ...loadedConfig.gesture },
         shortcuts: { ...defaultConfig.shortcuts, ...loadedConfig.shortcuts }
       };
     }
@@ -273,6 +277,26 @@ function setupGlobalHook() {
 
         overlayWindow.webContents.send('global-mouse', {
           type: 'down',
+          button: e.button, // 1: 左, 2: 右, 3: 中
+          x: localX,
+          y: localY,
+        });
+      }
+    });
+
+    // マウスクリック解除
+    uiohook.on('mouseup', (e) => {
+      if (overlayWindow && !overlayWindow.isDestroyed()) {
+        const primaryDisplay = screen.getPrimaryDisplay();
+        const displayBounds = primaryDisplay.bounds;
+        const scale = primaryDisplay.scaleFactor;
+
+        // 物理座標を論理座標に変換
+        const localX = Math.round(e.x / scale) - displayBounds.x;
+        const localY = Math.round(e.y / scale) - displayBounds.y;
+
+        overlayWindow.webContents.send('global-mouse', {
+          type: 'up',
           button: e.button, // 1: 左, 2: 右, 3: 中
           x: localX,
           y: localY,

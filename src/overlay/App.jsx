@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { recognizeGesture } from './gestureRecognizer';
 
 // uiohook-napi から送られてくるキーコードのマップ
 const KEY_MAP = {
@@ -18,6 +19,9 @@ export default function App() {
   const [keyCast, setKeyCast] = useState({ text: '', visible: false, timestamp: 0 });
   const [isSettingsActive, setIsSettingsActive] = useState(false);
   const isSettingsActiveRef = useRef(false);
+  const [isRecordingGesture, setIsRecordingGesture] = useState(false);
+  const isRecordingGestureRef = useRef(false);
+  const gesturePointsRef = useRef([]);
   
   // 描画ループで確実に最新値を取得するため、refを使用
   const mousePosRef = useRef({ x: 0, y: 0 });
@@ -59,9 +63,90 @@ export default function App() {
         setConfig(newConfig);
       });
 
+      const handleGestureResult = (result) => {
+        if (!config) return false;
+        const updatedConfig = { ...config };
+        let configChanged = false;
+        let gestureHandled = false;
+
+        if (result === 'checkmark') {
+          updatedConfig.pen = {
+            ...config.pen,
+            enabled: !config.pen.enabled
+          };
+          configChanged = true;
+          gestureHandled = true;
+        } else if (result === 'shake') {
+          // 手書きの全クリア
+          currentStrokeRef.current = null;
+          if (window.electronAPI) {
+            window.electronAPI.triggerClearDrawing(true);
+          }
+          gestureHandled = true;
+        } else if (result === 'rightToLeft') {
+          // 戻る (Undo)
+          currentStrokeRef.current = null;
+          if (window.electronAPI) {
+            window.electronAPI.triggerUndoDrawing();
+          }
+          gestureHandled = true;
+        } else if (result === 'leftToRight') {
+          // 進む (Redo)
+          currentStrokeRef.current = null;
+          if (window.electronAPI) {
+            window.electronAPI.triggerRedoDrawing();
+          }
+          gestureHandled = true;
+        }
+
+        if (configChanged) {
+          setConfig(updatedConfig);
+          if (window.electronAPI) {
+            window.electronAPI.updateConfig(updatedConfig);
+          }
+        }
+        return gestureHandled;
+      };
+
       // グローバルマウスイベントの同期
       const unsubscribeMouse = window.electronAPI.onGlobalMouse((e) => {
         if (isSettingsActiveRef.current) return;
+
+        // ジェスチャー記録中
+        if (config?.gesture?.enabled) {
+          if (e.type === 'down' && e.button === 3) {
+            isRecordingGestureRef.current = true;
+            setIsRecordingGesture(true);
+            gesturePointsRef.current = [{ x: e.x, y: e.y }];
+            window.electronAPI.setIgnoreMouseEvents(false, { forward: false });
+            return;
+          }
+
+          if (isRecordingGestureRef.current) {
+            if (e.type === 'move') {
+              gesturePointsRef.current.push({ x: e.x, y: e.y });
+              mousePosRef.current = { x: e.x, y: e.y };
+            } else if (e.type === 'up' && e.button === 3) {
+              isRecordingGestureRef.current = false;
+              setIsRecordingGesture(false);
+
+              const result = recognizeGesture(gesturePointsRef.current);
+              let gestureHandled = false;
+              if (result) {
+                gestureHandled = handleGestureResult(result);
+              }
+
+              gesturePointsRef.current = [];
+              
+              if (!gestureHandled) {
+                const updatedIsInteractive = config.pen?.enabled || (config.areaSpotlight?.enabled && !config.areaSpotlight?.rect) || config.zoom?.enabled;
+                window.electronAPI.setIgnoreMouseEvents(!updatedIsInteractive, { forward: !updatedIsInteractive });
+              }
+            }
+            return;
+          }
+        }
+
         if (e.type === 'move') {
           mousePosRef.current = { x: e.x, y: e.y };
           if (config?.laser?.enabled) {
@@ -285,6 +370,28 @@ export default function App() {
       if (isSettingsActive) {
         animationId = requestAnimationFrame(draw);
         return;
+      }
+
+      // 0.2. ジェスチャー軌跡の描画
+      if (isRecordingGesture && gesturePointsRef.current.length > 1) {
+        ctx.save();
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = 'rgba(16, 185, 129, 0.65)';
+        ctx.lineWidth = 4;
+        
+        ctx.beginPath();
+        ctx.moveTo(gesturePointsRef.current[0].x, gesturePointsRef.current[0].y);
+        for (let i = 1; i < gesturePointsRef.current.length; i++) {
+          ctx.lineTo(gesturePointsRef.current[i].x, gesturePointsRef.current[i].y);
+        }
+        ctx.stroke();
+        
+        ctx.fillStyle = 'rgba(16, 185, 129, 0.8)';
+        ctx.beginPath();
+        ctx.arc(gesturePointsRef.current[0].x, gesturePointsRef.current[0].y, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
       }
 
       // 0.5. ズーム（拡大鏡）描画
@@ -600,7 +707,8 @@ export default function App() {
       return;
     }
 
-    if (!config?.pen?.enabled) return;
+    // ジェスチャー記録中、または左クリック以外の場合は描画しない
+    if (!config?.pen?.enabled || isRecordingGestureRef.current || e.button !== 0) return;
     
     isDrawingRef.current = true;
     const rect = canvasRef.current.getBoundingClientRect();
@@ -631,7 +739,7 @@ export default function App() {
       return;
     }
 
-    if (!isDrawingRef.current || !currentStrokeRef.current) return;
+    if (isRecordingGestureRef.current || !isDrawingRef.current || !currentStrokeRef.current) return;
     
     const rect = canvasRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -679,7 +787,7 @@ export default function App() {
 
   const isPenActive = config?.pen?.enabled;
   const isZoomActive = config?.zoom?.enabled;
-  const isInteractive = !isSettingsActive && (isPenActive || isAreaSelecting || isZoomActive);
+  const isInteractive = !isSettingsActive && (isPenActive || isAreaSelecting || isZoomActive || isRecordingGesture);
 
   let cursorStyle = 'default';
   if (isPenActive) {

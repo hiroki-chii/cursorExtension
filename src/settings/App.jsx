@@ -531,6 +531,59 @@ export default function App() {
         {activeTab === 'drawing' && (
           <div className="space-y-6 max-w-2xl mx-auto">
 
+            {/* ジェスチャー操作設定 */}
+            <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 rounded-xl">
+                    <Sparkles className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-800 dark:text-slate-100">マウスジェスチャー機能</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">マウスの中ボタン（ホイールクリック）を押しながら動かすことで、ジェスチャーで機能をON/OFFします</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={config.gesture?.enabled ?? true}
+                  onChange={(val) => updateConfig('gesture', { enabled: val })}
+                />
+              </div>
+
+              <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 block mb-1">ジェスチャー一覧（マウス中ボタンを押しながらドラッグ）</span>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="flex items-center gap-2 p-2 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/35 dark:border-slate-700/35">
+                    <span className="text-lg">V</span>
+                    <div>
+                      <p className="font-bold">Vを描く</p>
+                      <p className="text-slate-500 dark:text-slate-400">手書きペン ON/OFF</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 p-2 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/35 dark:border-slate-700/35">
+                    <span className="text-lg">↔</span>
+                    <div>
+                      <p className="font-bold">左右に振る</p>
+                      <p className="text-slate-500 dark:text-slate-400">手書きの全クリア</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 p-2 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/35 dark:border-slate-700/35">
+                    <span className="text-lg">←</span>
+                    <div>
+                      <p className="font-bold">右から左に引く</p>
+                      <p className="text-slate-500 dark:text-slate-400">戻る (Undo)</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 p-2 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/35 dark:border-slate-700/35">
+                    <span className="text-lg">→</span>
+                    <div>
+                      <p className="font-bold">左から右に引く</p>
+                      <p className="text-slate-500 dark:text-slate-400">進む (Redo)</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* 手書きペン設定 */}
             <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm hover:shadow-md transition-shadow">
               <div className="flex items-center justify-between mb-4">
@@ -792,6 +845,38 @@ export default function App() {
               <div className="mt-4 p-3.5 bg-slate-150 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 rounded-xl text-xs flex gap-2">
                 <HelpCircle className="h-4 w-4 flex-shrink-0 text-indigo-500" />
                 <span>ショートカットキーは他のソフトウェアを操作中（PowerPointやブラウザなどでのスライド表示中）でも、バックグラウンドで常に有効です。</span>
+              </div>
+            </div>
+
+            {/* マウスジェスチャーショートカット */}
+            <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm mt-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2.5 bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 rounded-xl">
+                  <Sparkles className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-800 dark:text-slate-100">マウスジェスチャー操作</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">マウスの中ボタン（ホイールクリック）を押しながら描く操作</p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/30 dark:border-slate-700/30">
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">V（Vの形を描く）</span>
+                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">手書きペン ON/OFF</span>
+                </div>
+                <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/30 dark:border-slate-700/30">
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">↔（左右にすばやく振る）</span>
+                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">手書きの全クリア</span>
+                </div>
+                <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/30 dark:border-slate-700/30">
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">←（右から左に直線を引く）</span>
+                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">戻る (Undo)</span>
+                </div>
+                <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/30 dark:border-slate-700/30">
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">→（左から右に直線を引く）</span>
+                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">進む (Redo)</span>
+                </div>
               </div>
             </div>
 

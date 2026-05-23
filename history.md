@@ -146,3 +146,59 @@
   - 生成画像（JPEG）を .NET の `System.Drawing` を利用した PowerShell スクリプトで正規の PNG 形式 (`build/icon.png`) にデコード・再保存。
   - `node scripts/make-ico.js` を実行し、`build/icon.ico` および `electron/icon.ico` を緑基調の新しいアイコンファイルに上書き更新。
   - 設定画面 (`src/settings/App.jsx`) ヘッダーのロゴマーク背景色を `bg-indigo-500` から `bg-emerald-500` (影も `shadow-emerald-500/30` に変更) に、またタイトル `PresenterCursor` の文字グラデーションを `from-emerald-500 to-teal-600` の緑基調に変更。
+
+## 2026-05-22 16:57
+- アプリケーションの上書き再ビルド（`/rebuild-overwrite`）を実行。
+  - `dist-electron` ディレクトリをクリーンアップした上で `npm run electron:build` を実行。緑基調の新アイコンやUI配色が適用された Windows 用ポータブル実行ファイル `dist-electron/PresenterCursor 1.0.0.exe` のパッケージングがエラーなく完了。
+
+## 2026-05-23 11:50
+- ジェスチャーによる機能ON/OFFの実現可能性についての検討。
+  - 現在は未実装である旨を確認。
+  - `uiohook-napi` によるグローバルマウスイベント監視機能を用いて、特定のボタン押下中のマウス軌跡をサンプリングし、形状（円や往復、特定の文字など）を判定することで実装可能であることを整理。
+
+## 2026-05-23 11:52
+- 右クリック単体でのジェスチャートリガーの実現可能性と制限についての検討。
+  - `uiohook-napi` はイベントの監視（パッシブフック）のみ可能で、OSの標準イベントをブロック（アクティブフック）できないため、右クリックでジェスチャーを行うと他のアプリでコンテキストメニューが表示されてしまう制限を整理。
+  - 代替案として「Ctrl / Alt + 右クリック」「中ボタン（ホイールクリック）」「特定のキーを押しながらのドラッグ」などの干渉の少ないトリガー方法を検討。
+
+## 2026-05-23 11:55
+- マウス中ボタン長押しジェスチャー機能の要件定義を開始（`/grill-me`）。
+  - ジェスチャーの種類と機能割り当てについてヒアリングを開始。
+  - ユーザー回答：「◯（円）を描く＝スポットライト ON/OFF、左右にシェイク（振る）＝全機能OFF、その他は固定ジェスチャー」に決定。
+  - 軌跡描画仕様：「薄く軌跡を描画し、判定後に消去する」に決定。
+
+## 2026-05-23 12:00
+- マウス中ボタン長押しジェスチャー機能の設計・実装。
+  - `src/overlay/gestureRecognizer.js` を新規作成し、簡易 $1 認識アルゴリズムとシェイク検知ロジックを実装。
+  - `electron/main.js` で `uiohook-napi` の `mouseup` イベント監視を追加し、マウスボタンリリースイベントをオーバーレイへ透過。また、`gesture` のデフォルト設定を追加。
+  - `src/overlay/App.jsx` を修正。中ボタンのドラッグを監視してジェスチャーの軌跡を蓄積・薄く描画し、ボタンリリース時にジェスチャー判定（◯、↔、Z、V、□）を行って対応する機能をトグルするロジックを統合。
+  - `src/settings/App.jsx` にジェスチャー機能の有効/無効トグルおよびジェスチャーと機能の対応表（「描画 & アシスト」タブ内と「ショートカット」タブ内）を追加。
+  - アプリケーション全体のビルド検証 (`npm run build`) を実行し、ビルドが成功することを確認。
+  - `/rebuild-overwrite` に基づきポータブルアプリケーションのビルド (`npm run electron:build`) を実行し、`dist-electron/PresenterCursor 1.0.0.exe` のパッケージングに成功。
+
+## 2026-05-23 12:14
+- ジェスチャーで手書きペンをONにした際、実際に線が描画できないバグを修正。
+  - 原因：ジェスチャー終了時の `mouseup` 処理において、クロージャにキャプチャされた古い `config`（トグル前の `pen.enabled = false`）をベースに `setIgnoreMouseEvents` の判定と同期が行われてしまい、最新のトグル結果（`true`）が上書き透過されてしまっていたこと。
+  - 対策：`handleGestureResult` が設定変更の有無（`changed`）を boolean で返すように修正し、ジェスチャーによる設定変更が発生した場合は React 側での手動の `setIgnoreMouseEvents` をスキップし、メインプロセス側の `notifyConfigUpdate` の透過制御ロジックに任せるように修正。
+  - アプリケーション全体のビルド検証およびポータブルアプリの再ビルド（`npm run electron:build`）を実行し、正常にビルドを完了。
+
+## 2026-05-23 12:20
+- マウスジェスチャー操作の割り当てを手書きペン専用の機能にカスタマイズ。
+  - `src/overlay/gestureRecognizer.js` を修正。Vの字テンプレート（`checkmark`）のみを残し、左右シェイク判定（`shake`）および、水平スワイプ判定（`rightToLeft`、`leftToRight`）を追加。
+  - `src/overlay/App.jsx` を修正。判定されたジェスチャー（checkmark、shake、rightToLeft、leftToRight）を手書きペンのON/OFF、全クリア、Undo、Redoの各機能にマッピング。
+  - `src/settings/App.jsx` を修正。ジェスチャー一覧およびショートカット解説カードの表記を新しいマッピングに更新。
+  - アプリケーション全体のビルド検証およびポータブルアプリの再ビルド（`npm run electron:build`）を実行し、`dist-electron/PresenterCursor 1.0.0.exe` のパッケージングに成功。
+
+## 2026-05-23 12:25
+- ジェスチャー記録中（中ボタンクリック中）は手書きペンの描画機能が一時的にOFFになるよう修正。
+  - 課題：手書きペンがONの状態で中ボタンをドラッグしてジェスチャーを行おうとすると、ジェスチャーの軌跡と同時に手書きの線も一緒に描かれてしまう問題。
+  - 対策：`src/overlay/App.jsx` 内の `handlePointerDown` において、`isRecordingGestureRef.current` が `true` の場合、および `e.button !== 0`（左クリック以外）の場合に、ペンの描画処理を開始しないよう早期リターンするチェックを追加。また、`handlePointerMove` でも同様に `isRecordingGestureRef.current` の場合に描画点の追加処理をバイパスするよう修正。
+  - アプリケーション全体のビルド検証およびポータブルアプリの再ビルド（`npm run electron:build`）を実行し、`dist-electron/PresenterCursor 1.0.0.exe` のパッケージングに成功。
+
+## 2026-05-23 12:30
+- ジェスチャー操作時に Undo/Redo/Clear が2画ずつ（二重に）実行されてしまうバグを修正。
+  - 原因：`src/overlay/App.jsx` 内の `handleGestureResult` において、ローカルの `strokesRef.current` / `redoStrokesRef.current` 配列を直接操作した上で、さらに `window.electronAPI.triggerUndoDrawing` などの IPC を呼び出していたため。この IPC はメインプロセスを経由して自身（オーバーレイ）の `onUndoDrawing` リスナーを再度発火させ、結果的に二重に `pop` / `push` が実行されてしまっていた。
+  - 対策：`handleGestureResult` でのローカル配列の直接操作を削除し、すべての操作を IPC 呼び出し（`triggerUndoDrawing` 等）のみに一本化。これにより、二重実行を綺麗に解消。
+  - アプリケーション全体のビルド検証およびポータブルアプリの再ビルド（`npm run electron:build`）を実行し、`dist-electron/PresenterCursor 1.0.0.exe` のパッケージングに成功。
+
+
