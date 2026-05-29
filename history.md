@@ -1,5 +1,10 @@
 # 作業・修正ログ
 
+## 2026-05-29 11:05
+- Windowsアップデート後の起動直後クラッシュ不具合への暫定対策を適用。
+  - 原因：Windowsアップデートに伴うGPUドライバやサンドボックスセキュリティとChromiumの競合。
+  - 対策：`electron/main.js` のアプリ初期化部分に `app.commandLine.appendSwitch('disable-gpu')` および `app.commandLine.appendSwitch('no-sandbox')` を追加。これにより、起動時に強制終了する問題を回避。
+
 ## 2026-05-21 12:17
 - プレゼンテーション用マウスカーソル拡張アプリの開発を開始。
 - 開発フォルダ `c:\Users\hirok\dev\cursorExtension` の中身を確認（空）。

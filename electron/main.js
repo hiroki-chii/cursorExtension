@@ -2,6 +2,10 @@ const { app, BrowserWindow, ipcMain, screen, globalShortcut, desktopCapturer, Tr
 const path = require('path');
 const fs = require('fs');
 
+// Windowsアップデート後のGPUドライバ/サンドボックス競合によるクラッシュ暫定対策
+app.commandLine.appendSwitch('disable-gpu');
+app.commandLine.appendSwitch('no-sandbox');
+
 let settingsWindow = null;
 let overlayWindow = null;
 let hookInitialized = false;
