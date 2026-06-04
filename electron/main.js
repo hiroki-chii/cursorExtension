@@ -519,7 +519,6 @@ function notifyConfigUpdate() {
 
 app.whenReady().then(() => {
   loadConfig();
-  createSettingsWindow();
   createOverlayWindow();
   createTray(); // タスクトレイを作成
   
