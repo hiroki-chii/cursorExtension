@@ -1,6 +1,6 @@
 {
   "name": "presenter-cursor",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "プレゼン中に役立つマウスポインター拡張アプリ",
   "main": "electron/main.js",
   "scripts": {

@@ -921,7 +921,11 @@ export default function App() {
   return (
     <div 
       className="relative w-full h-full select-none"
-      style={{ pointerEvents: isInteractive ? 'auto' : 'none', cursor: cursorStyle }}
+      style={{ 
+        pointerEvents: isInteractive ? 'auto' : 'none', 
+        cursor: cursorStyle,
+        backgroundColor: isInteractive ? 'rgba(0, 0, 0, 0.005)' : 'transparent' // アルファ値が 1/255 以上（0.004以上）でないとOSで完全透明とみなされクリックが突き抜けるため 0.005 を設定
+      }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
@@ -929,8 +933,8 @@ export default function App() {
     >
       <canvas 
         ref={canvasRef} 
-        className="absolute inset-0 block bg-transparent"
-        style={{ pointerEvents: isInteractive ? 'auto' : 'none', cursor: cursorStyle }}
+        className="absolute inset-0 block bg-transparent pointer-events-none"
+        style={{ pointerEvents: 'none', cursor: cursorStyle }}
       />
 
       {/* キーキャストバッジ */}

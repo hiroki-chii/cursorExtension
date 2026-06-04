@@ -14,7 +14,15 @@ let isSettingsHovered = false;
 let tray = null; // タスクトレイアイコン用
 
 function updateSettingsState() {
-  const isSettingsActive = isSettingsFocused || isSettingsHovered;
+  let isSettingsActive = isSettingsFocused || isSettingsHovered;
+  
+  // 設定ウィンドウが最小化されている、または非表示の場合はアクティブとみなさない
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    if (settingsWindow.isMinimized() || !settingsWindow.isVisible()) {
+      isSettingsActive = false;
+    }
+  }
+
   if (overlayWindow && !overlayWindow.isDestroyed()) {
     overlayWindow.webContents.send('settings-state-changed', isSettingsActive);
     
@@ -162,12 +170,25 @@ function createSettingsWindow() {
 
   settingsWindow.on('blur', () => {
     isSettingsFocused = false;
+    isSettingsHovered = false; // フォーカスアウト時もホバー状態をリセット
+    updateSettingsState();
+  });
+
+  settingsWindow.on('minimize', () => {
+    isSettingsFocused = false;
+    isSettingsHovered = false; // 最小化時もホバー・フォーカス状態をリセット
+    updateSettingsState();
+  });
+
+  settingsWindow.on('restore', () => {
+    isSettingsFocused = true;
     updateSettingsState();
   });
 
   settingsWindow.on('closed', () => {
     settingsWindow = null;
     isSettingsFocused = false;
+    isSettingsHovered = false; // ウィンドウクローズ時にホバー状態も強制リセット
     updateSettingsState();
     // タスクトレイに常駐するため、ここでは app.quit() を呼ばない
   });
@@ -229,6 +250,7 @@ function createOverlayWindow() {
     skipTaskbar: true,
     enableLargerThanScreen: true,
     hasShadow: false,
+    focusable: false, // フォーカスを持たせないことで、他ウィンドウのフォーカス状態への干渉を防ぎ、クリック背面突き抜けを防止する
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
