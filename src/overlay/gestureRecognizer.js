@@ -171,7 +171,7 @@ export function recognizeGesture(points) {
 
   // 1. まずシェイクを判定
   if (detectShake(points)) {
-    return 'shake';
+    return 'clearDrawing';
   }
 
   // 2. 水平スワイプ（左から右、右から左）を判定

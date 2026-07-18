@@ -1,0 +1,18 @@
+module.exports = Object.freeze({
+  CAPTURE_SCREEN: 'capture-screen',
+  GET_CONFIG: 'get-config',
+  UPDATE_CONFIG: 'update-config',
+  CONFIG_UPDATED: 'config-updated',
+  SET_SETTINGS_HOVER: 'set-settings-hover',
+  SETTINGS_STATE_CHANGED: 'settings-state-changed',
+  SET_IGNORE_MOUSE_EVENTS: 'set-ignore-mouse-events',
+  GLOBAL_MOUSE: 'global-mouse',
+  GLOBAL_KEY: 'global-key',
+  GLOBAL_WHEEL: 'global-wheel',
+  CLEAR_DRAWING: 'clear-drawing',
+  UNDO_DRAWING: 'undo-drawing',
+  REDO_DRAWING: 'redo-drawing',
+  TRIGGER_CLEAR_DRAWING: 'trigger-clear-drawing',
+  TRIGGER_UNDO_DRAWING: 'trigger-undo-drawing',
+  TRIGGER_REDO_DRAWING: 'trigger-redo-drawing',
+});

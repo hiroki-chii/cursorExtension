@@ -1,9 +1,10 @@
 {
   "name": "presenter-cursor",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "プレゼン中に役立つマウスポインター拡張アプリ",
   "main": "electron/main.js",
   "scripts": {
+    "test": "node --test --test-concurrency=1 test/*.test.cjs",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",

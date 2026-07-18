@@ -1,5 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { recognizeGesture } from './gestureRecognizer';
+import { createDrawingHistory } from './drawingHistory';
+import { isOverlayInteractive } from './interactionPolicy';
+import { subscribeOverlayEvents } from './electronSubscriptions';
+import {
+  drawAreaSpotlight,
+  drawGesture,
+  drawInteractionIndicator,
+  drawLaser,
+  drawRipples,
+  drawSpotlight,
+  drawStrokes,
+  drawZoom,
+} from './canvasRenderer';
 
 // uiohook-napi から送られてくるキーコードのマップ
 const KEY_MAP = {
@@ -24,12 +37,26 @@ const TRIGGER_KEYS = {
 export default function App() {
   const canvasRef = useRef(null);
   const [config, setConfig] = useState(null);
+  const configRef = useRef(null);
+  const updateConfigState = (nextConfig) => {
+    configRef.current = nextConfig;
+    setConfig(nextConfig);
+  };
   const [keyCast, setKeyCast] = useState({ text: '', visible: false, timestamp: 0 });
   const [isSettingsActive, setIsSettingsActive] = useState(false);
   const isSettingsActiveRef = useRef(false);
   const [isRecordingGesture, setIsRecordingGesture] = useState(false);
   const isRecordingGestureRef = useRef(false);
   const gesturePointsRef = useRef([]);
+
+  // コンテキストメニュー用ステートとRef
+  const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0 });
+  const contextMenuRef = useRef({ visible: false, x: 0, y: 0 });
+
+  const updateContextMenu = (val) => {
+    contextMenuRef.current = val;
+    setContextMenu(val);
+  };
   
   // 描画ループで確実に最新値を取得するため、refを使用
   const mousePosRef = useRef({ x: 0, y: 0 });
@@ -37,8 +64,10 @@ export default function App() {
   const ripplesRef = useRef([]); // クリック波紋保存
   
   // 手書きペンデータ
-  const strokesRef = useRef([]);
-  const redoStrokesRef = useRef([]); // やり直し用
+  const drawingHistoryRef = useRef(null);
+  if (!drawingHistoryRef.current) {
+    drawingHistoryRef.current = createDrawingHistory();
+  }
   const currentStrokeRef = useRef(null);
   const isDrawingRef = useRef(false);
 
@@ -75,8 +104,12 @@ export default function App() {
     // 透過状態を同期
     if (config) {
       const isAreaSelecting = config.areaSpotlight?.enabled && !config.areaSpotlight?.rect;
-      const isZoomActive = config.zoom?.enabled;
-      const updatedIsInteractive = config.pen?.enabled || isAreaSelecting || isZoomActive || isRecordingGestureRef.current;
+      const updatedIsInteractive = isOverlayInteractive({
+        settingsActive: isSettingsActiveRef.current,
+        penEnabled: config.pen?.enabled,
+        areaSelecting: isAreaSelecting,
+        recordingGesture: isRecordingGestureRef.current,
+      });
       if (window.electronAPI) {
         window.electronAPI.setIgnoreMouseEvents(!updatedIsInteractive, { forward: !updatedIsInteractive });
       }
@@ -87,15 +120,16 @@ export default function App() {
     if (window.electronAPI) {
       // 初期設定の取得
       window.electronAPI.getConfig().then((initialConfig) => {
-        setConfig(initialConfig);
+        updateConfigState(initialConfig);
       });
 
       // 設定変更の同期
-      const unsubscribeConfig = window.electronAPI.onConfigUpdate((newConfig) => {
-        setConfig(newConfig);
-      });
+      const handleConfigUpdate = (newConfig) => {
+        updateConfigState(newConfig);
+      };
 
       const handleGestureResult = (result) => {
+        const config = configRef.current;
         if (!config) return false;
         const updatedConfig = { ...config };
         let configChanged = false;
@@ -108,8 +142,8 @@ export default function App() {
           };
           configChanged = true;
           gestureHandled = true;
-        } else if (result === 'shake') {
-          // 手書きの全クリア
+        } else if (result === 'clearDrawing') {
+          // 描画だけを消去し、ペンモードの有効状態は維持する
           currentStrokeRef.current = null;
           if (window.electronAPI) {
             window.electronAPI.triggerClearDrawing(true);
@@ -132,7 +166,7 @@ export default function App() {
         }
 
         if (configChanged) {
-          setConfig(updatedConfig);
+          updateConfigState(updatedConfig);
           if (window.electronAPI) {
             window.electronAPI.updateConfig(updatedConfig);
           }
@@ -141,7 +175,8 @@ export default function App() {
       };
 
       // グローバルマウスイベントの同期
-      const unsubscribeMouse = window.electronAPI.onGlobalMouse((e) => {
+      const handleGlobalMouse = (e) => {
+        const config = configRef.current;
         if (isSettingsActiveRef.current) return;
 
         // ジェスチャー記録中
@@ -171,7 +206,12 @@ export default function App() {
               gesturePointsRef.current = [];
               
               if (!gestureHandled) {
-                const updatedIsInteractive = config.pen?.enabled || (config.areaSpotlight?.enabled && !config.areaSpotlight?.rect) || config.zoom?.enabled;
+                const updatedIsInteractive = isOverlayInteractive({
+                  settingsActive: isSettingsActiveRef.current,
+                  penEnabled: config.pen?.enabled,
+                  areaSelecting: config.areaSpotlight?.enabled && !config.areaSpotlight?.rect,
+                  recordingGesture: false,
+                });
                 window.electronAPI.setIgnoreMouseEvents(!updatedIsInteractive, { forward: !updatedIsInteractive });
               }
             }
@@ -218,10 +258,11 @@ export default function App() {
             });
           }
         }
-      });
+      };
 
       // グローバルキーイベントの同期 (キーキャスト & 各種制御)
-      const unsubscribeKey = window.electronAPI.onGlobalKey((e) => {
+      const handleGlobalKey = (e) => {
+        const config = configRef.current;
         if (isSettingsActiveRef.current) return;
 
         const type = e.type || 'down'; // 下位互換用
@@ -248,8 +289,12 @@ export default function App() {
               const isTriggerActive = isDown && isPenEnabled;
               const isPenActive = isPenEnabled || isTriggerActive;
               const isAreaSelecting = config.areaSpotlight?.enabled && !config.areaSpotlight?.rect;
-              const isZoomActive = config.zoom?.enabled;
-              const updatedIsInteractive = isPenActive || isAreaSelecting || isZoomActive || isRecordingGestureRef.current;
+              const updatedIsInteractive = isOverlayInteractive({
+                settingsActive: isSettingsActiveRef.current,
+                penEnabled: isPenActive,
+                areaSelecting: isAreaSelecting,
+                recordingGesture: isRecordingGestureRef.current,
+              });
               
               if (window.electronAPI) {
                 window.electronAPI.setIgnoreMouseEvents(!updatedIsInteractive, { forward: !updatedIsInteractive });
@@ -275,8 +320,7 @@ export default function App() {
                 if (isDrawingRef.current) {
                   isDrawingRef.current = false;
                   if (currentStrokeRef.current && currentStrokeRef.current.points.length >= 2) {
-                    strokesRef.current.push(currentStrokeRef.current);
-                    redoStrokesRef.current = []; // 履歴をクリア
+                    drawingHistoryRef.current.commit(currentStrokeRef.current);
                   }
                   currentStrokeRef.current = null;
                 }
@@ -290,6 +334,11 @@ export default function App() {
 
         // Escキー (keycode 1) で通常のスポットライト・エリアスポットライト選択・ズームを解除/キャンセルする
         if (e.keycode === 1) { // Esc
+          if (contextMenuRef.current.visible) {
+            updateContextMenu({ visible: false, x: 0, y: 0 });
+            return;
+          }
+
           let changed = false;
           const updatedConfig = { ...config };
 
@@ -319,7 +368,7 @@ export default function App() {
           }
 
           if (changed) {
-            setConfig(updatedConfig);
+            updateConfigState(updatedConfig);
             if (window.electronAPI) {
               window.electronAPI.updateConfig(updatedConfig);
             }
@@ -349,10 +398,11 @@ export default function App() {
           visible: true,
           timestamp: Date.now()
         });
-      });
+      };
 
       // グローバルホイールイベントの同期
-      const unsubscribeWheel = window.electronAPI.onGlobalWheel((data) => {
+      const handleGlobalWheel = (data) => {
+        const config = configRef.current;
         if (isSettingsActiveRef.current) return;
         if (!config?.zoom?.enabled) return;
 
@@ -366,57 +416,47 @@ export default function App() {
         newScale = Math.max(minScale, Math.min(maxScale, newScale));
 
         zoomScaleRef.current = newScale;
-      });
+      };
 
       // 手書きクリアの同期 (allがtrueなら全クリア、falseなら1画消去/Undo)
-      const unsubscribeClear = window.electronAPI.onClearDrawing((all) => {
+      const handleClearDrawing = (all) => {
         if (all) {
-          strokesRef.current = [];
-          redoStrokesRef.current = [];
+          drawingHistoryRef.current.clear();
         } else {
-          if (strokesRef.current.length > 0) {
-            const popped = strokesRef.current.pop();
-            redoStrokesRef.current.push(popped);
-          }
+          drawingHistoryRef.current.undo();
         }
         currentStrokeRef.current = null;
-      });
+      };
 
       // 手書きアンドゥの同期
-      const unsubscribeUndo = window.electronAPI.onUndoDrawing(() => {
-        if (strokesRef.current.length > 0) {
-          const popped = strokesRef.current.pop();
-          redoStrokesRef.current.push(popped);
-        }
-      });
+      const handleUndoDrawing = () => {
+        drawingHistoryRef.current.undo();
+      };
 
       // 手書きリドゥの同期
-      const unsubscribeRedo = window.electronAPI.onRedoDrawing(() => {
-        if (redoStrokesRef.current.length > 0) {
-          const popped = redoStrokesRef.current.pop();
-          strokesRef.current.push(popped);
-        }
-      });
+      const handleRedoDrawing = () => {
+        drawingHistoryRef.current.redo();
+      };
 
       // 設定画面のアクティブ状態の同期
-      const unsubscribeSettingsState = window.electronAPI.onSettingsStateChanged((active) => {
+      const handleSettingsStateChanged = (active) => {
         setIsSettingsActive(active);
-      });
-
-      return () => {
-        unsubscribeConfig();
-        unsubscribeMouse();
-        unsubscribeKey();
-        unsubscribeWheel();
-        unsubscribeClear();
-        unsubscribeUndo();
-        unsubscribeRedo();
-        unsubscribeSettingsState();
       };
-    }
-  }, [config]);
 
-  // ズーム（拡大鏡）有効時のスクリーンキャプチャ取得処理
+      return subscribeOverlayEvents(window.electronAPI, {
+        configUpdated: handleConfigUpdate,
+        globalMouse: handleGlobalMouse,
+        globalKey: handleGlobalKey,
+        globalWheel: handleGlobalWheel,
+        clearDrawing: handleClearDrawing,
+        undoDrawing: handleUndoDrawing,
+        redoDrawing: handleRedoDrawing,
+        settingsStateChanged: handleSettingsStateChanged,
+      });
+    }
+  }, []);
+
+  // 全画面ズーム有効時のスクリーンキャプチャ取得処理
   useEffect(() => {
     if (config?.zoom?.enabled) {
       // 初期倍率にリセット
@@ -487,321 +527,35 @@ export default function App() {
       }
 
       // 0.2. ジェスチャー軌跡の描画
-      if (isRecordingGesture && gesturePointsRef.current.length > 1) {
-        ctx.save();
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.strokeStyle = 'rgba(16, 185, 129, 0.65)';
-        ctx.lineWidth = 4;
-        
-        ctx.beginPath();
-        ctx.moveTo(gesturePointsRef.current[0].x, gesturePointsRef.current[0].y);
-        for (let i = 1; i < gesturePointsRef.current.length; i++) {
-          ctx.lineTo(gesturePointsRef.current[i].x, gesturePointsRef.current[i].y);
-        }
-        ctx.stroke();
-        
-        ctx.fillStyle = 'rgba(16, 185, 129, 0.8)';
-        ctx.beginPath();
-        ctx.arc(gesturePointsRef.current[0].x, gesturePointsRef.current[0].y, 5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
+      if (isRecordingGestureRef.current && gesturePointsRef.current.length > 1) {
+        drawGesture(ctx, gesturePointsRef.current);
       }
 
-      // 0.5. ズーム（拡大鏡）描画
+      // 0.5. カーソル位置を基準とした全画面ズーム描画
       if (config.zoom?.enabled && captureImageRef.current) {
-        const mx = mousePosRef.current.x;
-        const my = mousePosRef.current.y;
-        const r = config.zoom.radius || 150;
-        const scale = zoomScaleRef.current;
-
-        ctx.save();
-        // 拡大鏡の外側の影
-        ctx.beginPath();
-        ctx.arc(mx, my, r, 0, Math.PI * 2);
-        ctx.shadowBlur = 25;
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.05)';
-        ctx.fill();
-        ctx.restore();
-
-        // 拡大領域のクリップ
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(mx, my, r, 0, Math.PI * 2);
-        ctx.clip();
-
-        // キャプチャした画像を拡大して描画
-        const img = captureImageRef.current;
-        const rx = img.width / canvas.width;
-        const ry = img.height / canvas.height;
-
-        const sw = (r * 2 * rx) / scale;
-        const sh = (r * 2 * ry) / scale;
-        const sx = (mx * rx) - (sw / 2);
-        const sy = (my * ry) - (sh / 2);
-
-        const dx = mx - r;
-        const dy = my - r;
-        const dw = r * 2;
-        const dh = r * 2;
-
-        ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
-        ctx.restore();
-
-        // 拡大鏡のボーダー
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(mx, my, r, 0, Math.PI * 2);
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 3;
-        ctx.stroke();
-        ctx.strokeStyle = 'rgba(15, 23, 42, 0.15)';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-        ctx.restore();
-
-        // 拡大率のテキストバッジ
-        ctx.save();
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        
-        const badgeW = 54;
-        const badgeH = 20;
-        const badgeX = mx - badgeW / 2;
-        const badgeY = my + r - 32;
-        
-        ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 6);
-        ctx.fill();
-        ctx.stroke();
-        
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 11px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(`${scale.toFixed(1)}x`, mx, badgeY + badgeH / 2);
-        ctx.restore();
+        drawZoom(ctx, canvas, captureImageRef.current, mousePosRef.current, zoomScaleRef.current);
       }
 
       // 1. スポットライト
-      if (config.spotlight?.enabled) {
-        ctx.save();
-        ctx.fillStyle = `rgba(15, 23, 42, ${config.spotlight.opacity || 0.6})`;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        ctx.globalCompositeOperation = 'destination-out';
-        
-        const radius = config.spotlight.radius || 120;
-        const grad = ctx.createRadialGradient(
-          mousePosRef.current.x, mousePosRef.current.y, radius * 0.7,
-          mousePosRef.current.x, mousePosRef.current.y, radius
-        );
-        grad.addColorStop(0, 'rgba(0, 0, 0, 1.0)');
-        grad.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
-
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(mousePosRef.current.x, mousePosRef.current.y, radius, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-      }
+      drawSpotlight(ctx, canvas, config.spotlight, mousePosRef.current);
 
       // 1.5. エリアスポットライト（矩形・ドラッグ選択）
-      if (config.areaSpotlight?.enabled) {
-        const activeRect = config.areaSpotlight.rect || tempRect;
-        const isSelecting = config.areaSpotlight.enabled && !config.areaSpotlight.rect;
-
-        if (activeRect) {
-          ctx.save();
-          // 暗い背景を描く
-          ctx.fillStyle = `rgba(15, 23, 42, ${config.areaSpotlight.opacity || 0.6})`;
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-          // 矩形部分をくり抜く
-          ctx.globalCompositeOperation = 'destination-out';
-          ctx.fillStyle = 'rgba(0, 0, 0, 1.0)';
-          ctx.fillRect(activeRect.x, activeRect.y, activeRect.width, activeRect.height);
-
-          // 枠線を描画する
-          ctx.globalCompositeOperation = 'source-over';
-          ctx.strokeStyle = config.areaSpotlight.borderColor || '#3b82f6';
-          ctx.lineWidth = config.areaSpotlight.borderWidth || 2;
-          ctx.strokeRect(activeRect.x, activeRect.y, activeRect.width, activeRect.height);
-          ctx.restore();
-        } else if (isSelecting) {
-          // まだドラッグが始まっていない選択中のとき（画面全体を軽く暗くして、ドラッグできることを示す）
-          ctx.save();
-          ctx.fillStyle = `rgba(15, 23, 42, ${(config.areaSpotlight.opacity || 0.6) * 0.5})`;
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          ctx.restore();
-        }
-      }
+      drawAreaSpotlight(ctx, canvas, config.areaSpotlight, tempRect);
 
       // 2. 手書きペン
-      if (strokesRef.current.length > 0 || currentStrokeRef.current) {
-        ctx.save();
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-
-        // 過去の線
-        strokesRef.current.forEach(stroke => {
-          if (stroke.points.length < 2) return;
-          ctx.save();
-          ctx.strokeStyle = stroke.color;
-          ctx.lineWidth = stroke.width;
-          ctx.globalAlpha = stroke.opacity !== undefined ? stroke.opacity : 0.8;
-          ctx.beginPath();
-          ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
-          for (let i = 1; i < stroke.points.length; i++) {
-            ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
-          }
-          ctx.stroke();
-          ctx.restore();
-        });
-
-        // 現在描いている線
-        if (currentStrokeRef.current && currentStrokeRef.current.points.length >= 2) {
-          ctx.save();
-          ctx.strokeStyle = currentStrokeRef.current.color;
-          ctx.lineWidth = currentStrokeRef.current.width;
-          ctx.globalAlpha = currentStrokeRef.current.opacity !== undefined ? currentStrokeRef.current.opacity : 0.8;
-          ctx.beginPath();
-          ctx.moveTo(currentStrokeRef.current.points[0].x, currentStrokeRef.current.points[0].y);
-          for (let i = 1; i < currentStrokeRef.current.points.length; i++) {
-            ctx.lineTo(currentStrokeRef.current.points[i].x, currentStrokeRef.current.points[i].y);
-          }
-          ctx.stroke();
-          ctx.restore();
-        }
-        ctx.restore();
-      }
+      const committedStrokes = drawingHistoryRef.current.getStrokes();
+      drawStrokes(ctx, committedStrokes, currentStrokeRef.current);
 
       // 3. レーザーポインター
-      if (config.laser?.enabled) {
-        const now = Date.now();
-        const trailLength = (config.laser.trailLength || 8) * 40; // ミリ秒
-        
-        laserHistoryRef.current = laserHistoryRef.current.filter(p => now - p.time < trailLength);
-
-        if (laserHistoryRef.current.length > 1) {
-          ctx.save();
-          ctx.lineCap = 'round';
-          ctx.lineJoin = 'round';
-          
-          for (let i = 1; i < laserHistoryRef.current.length; i++) {
-            const p1 = laserHistoryRef.current[i - 1];
-            const p2 = laserHistoryRef.current[i];
-            const age = now - p2.time;
-            const ratio = 1 - age / trailLength;
-            
-            ctx.strokeStyle = config.laser.color || '#ef4444';
-            ctx.globalAlpha = ratio * 0.6;
-            ctx.lineWidth = (config.laser.radius || 6) * ratio * 1.5;
-            
-            ctx.beginPath();
-            ctx.moveTo(p1.x, p1.y);
-            ctx.lineTo(p2.x, p2.y);
-            ctx.stroke();
-          }
-          ctx.restore();
-        }
-
-        // ポインタ本体
-        ctx.save();
-        ctx.shadowBlur = 12;
-        ctx.shadowColor = config.laser.color || '#ef4444';
-        ctx.fillStyle = config.laser.color || '#ef4444';
-        ctx.beginPath();
-        ctx.arc(mousePosRef.current.x, mousePosRef.current.y, config.laser.radius || 6, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-      }
+      laserHistoryRef.current = drawLaser(
+        ctx, config.laser, mousePosRef.current, laserHistoryRef.current,
+      );
 
       // 4. クリック波紋
-      if (config.ripple?.enabled && ripplesRef.current.length > 0) {
-        ctx.save();
-        ripplesRef.current.forEach((ripple, index) => {
-          ripple.radius += ripple.speed;
-          ripple.opacity = 1.0 - (ripple.radius / ripple.maxRadius);
-
-          if (ripple.opacity <= 0) {
-            ripplesRef.current[index] = null;
-            return;
-          }
-
-          ctx.beginPath();
-          ctx.arc(ripple.x, ripple.y, ripple.radius, 0, Math.PI * 2);
-          ctx.strokeStyle = ripple.color;
-          ctx.globalAlpha = ripple.opacity;
-          ctx.lineWidth = 3;
-          ctx.stroke();
-
-          ctx.beginPath();
-          ctx.arc(ripple.x, ripple.y, ripple.radius * 0.6, 0, Math.PI * 2);
-          ctx.fillStyle = ripple.color;
-          ctx.globalAlpha = ripple.opacity * 0.15;
-          ctx.fill();
-        });
-        ripplesRef.current = ripplesRef.current.filter(r => r !== null);
-        ctx.restore();
-      }
+      ripplesRef.current = drawRipples(ctx, config.ripple, ripplesRef.current);
 
       // 5. マウス追従インジケータ (ペンモード / エリアスポットライト選択中)
-      if (!isSettingsActive) {
-        if (config.pen?.enabled) {
-          ctx.save();
-          const mx = mousePosRef.current.x;
-          const my = mousePosRef.current.y;
-          
-          // ペン色を取得（デフォルトは黄色）
-          const penColor = config.pen.color || '#eab308';
-          
-          // ガラス風の小さなサークル
-          ctx.beginPath();
-          ctx.arc(mx + 16, my + 16, 12, 0, Math.PI * 2);
-          ctx.fillStyle = 'rgba(15, 23, 42, 0.75)'; // ダークなガラス背景
-          ctx.strokeStyle = penColor;
-          ctx.lineWidth = 1.5;
-          ctx.shadowBlur = 6;
-          ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
-          ctx.fill();
-          ctx.stroke();
-          
-          // ペン絵文字
-          ctx.fillStyle = '#ffffff';
-          ctx.font = '11px sans-serif';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText('✏️', mx + 16, my + 16);
-          ctx.restore();
-        } else if (isAreaSelecting) {
-          ctx.save();
-          const mx = mousePosRef.current.x;
-          const my = mousePosRef.current.y;
-          const borderColor = config.areaSpotlight?.borderColor || '#3b82f6';
-          
-          // エリア選択用のガラス風サークル
-          ctx.beginPath();
-          ctx.arc(mx + 16, my + 16, 12, 0, Math.PI * 2);
-          ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
-          ctx.strokeStyle = borderColor;
-          ctx.lineWidth = 1.5;
-          ctx.shadowBlur = 6;
-          ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
-          ctx.fill();
-          ctx.stroke();
-          
-          // クロスヘア絵文字
-          ctx.fillStyle = '#ffffff';
-          ctx.font = '12px sans-serif';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText('⛶', mx + 16, my + 16);
-          ctx.restore();
-        }
-      }
+      drawInteractionIndicator(ctx, config, mousePosRef.current, isAreaSelecting);
 
       animationId = requestAnimationFrame(draw);
     };
@@ -816,8 +570,53 @@ export default function App() {
 
   const isAreaSelecting = config?.areaSpotlight?.enabled && !config?.areaSpotlight?.rect;
 
+  // 手書きペンの設定変更ハンドラー
+  const handlePenConfigChange = (key, value) => {
+    if (!config) return;
+    const updatedConfig = {
+      ...config,
+      pen: {
+        ...config.pen,
+        [key]: value
+      }
+    };
+    updateConfigState(updatedConfig);
+    if (window.electronAPI) {
+      window.electronAPI.updateConfig(updatedConfig);
+    }
+  };
+
+  // 右クリックコンテキストメニュー表示ハンドラー
+  const handleContextMenu = (e) => {
+    if (!config?.pen?.enabled) return;
+    e.preventDefault();
+
+    const menuWidth = 240;
+    const menuHeight = 280;
+    let x = e.clientX;
+    let y = e.clientY;
+
+    if (x + menuWidth > window.innerWidth) {
+      x = window.innerWidth - menuWidth - 10;
+    }
+    if (y + menuHeight > window.innerHeight) {
+      y = window.innerHeight - menuHeight - 10;
+    }
+
+    updateContextMenu({
+      visible: true,
+      x,
+      y
+    });
+  };
+
   // 手書き & エリア選択入力ハンドラー
   const handlePointerDown = (e) => {
+    if (contextMenuRef.current.visible) {
+      updateContextMenu({ visible: false, x: 0, y: 0 });
+      return;
+    }
+
     if (isAreaSelecting) {
       const rect = canvasRef.current.getBoundingClientRect();
       const x = e.clientX - rect.left;
@@ -885,7 +684,7 @@ export default function App() {
             enabled: true
           }
         };
-        setConfig(updatedConfig);
+        updateConfigState(updatedConfig);
         if (window.electronAPI) {
           window.electronAPI.updateConfig(updatedConfig);
         }
@@ -900,16 +699,19 @@ export default function App() {
     isDrawingRef.current = false;
     
     if (currentStrokeRef.current && currentStrokeRef.current.points.length >= 2) {
-      strokesRef.current.push(currentStrokeRef.current);
-      redoStrokesRef.current = []; // 新しく描画されたのでやり直し履歴をクリア
+      drawingHistoryRef.current.commit(currentStrokeRef.current);
     }
     currentStrokeRef.current = null;
   };
 
   const isTriggerActive = config?.pen?.enabled && config.pen.triggerKey && config.pen.triggerKey !== 'None' && isTriggerKeyPressed;
   const isPenActive = config?.pen?.enabled || isTriggerActive;
-  const isZoomActive = config?.zoom?.enabled;
-  const isInteractive = !isSettingsActive && (isPenActive || isAreaSelecting || isZoomActive || isRecordingGesture);
+  const isInteractive = isOverlayInteractive({
+    settingsActive: isSettingsActive,
+    penEnabled: isPenActive,
+    areaSelecting: isAreaSelecting,
+    recordingGesture: isRecordingGesture,
+  });
 
   let cursorStyle = 'default';
   if (isPenActive) {
@@ -930,6 +732,7 @@ export default function App() {
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
+      onContextMenu={handleContextMenu}
     >
       <canvas 
         ref={canvasRef} 
@@ -945,6 +748,103 @@ export default function App() {
             <span className="text-xl font-mono">{keyCast.text}</span>
           </div>
         </div>
+      )}
+
+      {/* 右クリックコンテキストメニュー */}
+      {contextMenu.visible && (
+        <>
+          {/* バックドロップ */}
+          <div 
+            className="fixed inset-0 z-40 bg-transparent"
+            onClick={() => updateContextMenu({ visible: false, x: 0, y: 0 })}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              updateContextMenu({ visible: false, x: 0, y: 0 });
+            }}
+          />
+          {/* メニュー本体 */}
+          <div 
+            className="absolute z-50 w-60 p-4 rounded-2xl bg-slate-900/95 text-slate-100 border border-slate-800/80 shadow-2xl backdrop-blur-md flex flex-col gap-4 select-none animate-fade-in"
+            style={{ 
+              left: `${contextMenu.x}px`, 
+              top: `${contextMenu.y}px` 
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerMove={(e) => e.stopPropagation()}
+            onPointerUp={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-850 pb-2">
+              <span className="text-xs font-bold text-slate-400 tracking-wider">ペン設定</span>
+              <button 
+                onClick={() => updateContextMenu({ visible: false, x: 0, y: 0 })}
+                className="text-slate-400 hover:text-slate-200 transition-colors text-xs font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* 色選択 */}
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">カラー</label>
+              <div className="grid grid-cols-4 gap-2">
+                {[
+                  { name: 'yellow', value: '#eab308' },
+                  { name: 'red', value: '#ef4444' },
+                  { name: 'blue', value: '#3b82f6' },
+                  { name: 'green', value: '#10b981' },
+                  { name: 'orange', value: '#f97316' },
+                  { name: 'purple', value: '#a855f7' },
+                  { name: 'slate', value: '#0f172a' },
+                  { name: 'white', value: '#ffffff' },
+                ].map((color) => (
+                  <button
+                    key={color.value}
+                    onClick={() => handlePenConfigChange('color', color.value)}
+                    className="relative w-8 h-8 rounded-full border border-slate-700/50 flex items-center justify-center transition-all hover:scale-110 active:scale-95 shadow-sm"
+                    style={{ backgroundColor: color.value }}
+                  >
+                    {config?.pen?.color === color.value && (
+                      <span className={`w-2 h-2 rounded-full ${color.value === '#ffffff' ? 'bg-slate-900' : 'bg-white'} shadow-md`} />
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 太さ選択 */}
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">太さ</label>
+                <span className="text-xs font-mono font-bold text-emerald-400">{config?.pen?.width || 4}px</span>
+              </div>
+              <input
+                type="range"
+                min="1"
+                max="20"
+                value={config?.pen?.width || 4}
+                onChange={(e) => handlePenConfigChange('width', parseInt(e.target.value))}
+                className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+              />
+            </div>
+
+            {/* 不透明度選択 */}
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">不透明度</label>
+                <span className="text-xs font-mono font-bold text-emerald-400">{Math.round((config?.pen?.opacity !== undefined ? config?.pen?.opacity : 0.8) * 100)}%</span>
+              </div>
+              <input
+                type="range"
+                min="0.1"
+                max="1.0"
+                step="0.05"
+                value={config?.pen?.opacity !== undefined ? config?.pen?.opacity : 0.8}
+                onChange={(e) => handlePenConfigChange('opacity', parseFloat(e.target.value))}
+                className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+              />
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

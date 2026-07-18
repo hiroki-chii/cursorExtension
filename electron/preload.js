@@ -1,83 +1,77 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+// Sandboxed preload scripts cannot require local files, so this boundary stays self-contained.
+const channels = Object.freeze({
+  CAPTURE_SCREEN: 'capture-screen',
+  GET_CONFIG: 'get-config',
+  UPDATE_CONFIG: 'update-config',
+  CONFIG_UPDATED: 'config-updated',
+  SET_SETTINGS_HOVER: 'set-settings-hover',
+  SETTINGS_STATE_CHANGED: 'settings-state-changed',
+  SET_IGNORE_MOUSE_EVENTS: 'set-ignore-mouse-events',
+  GLOBAL_MOUSE: 'global-mouse',
+  GLOBAL_KEY: 'global-key',
+  GLOBAL_WHEEL: 'global-wheel',
+  CLEAR_DRAWING: 'clear-drawing',
+  UNDO_DRAWING: 'undo-drawing',
+  REDO_DRAWING: 'redo-drawing',
+  TRIGGER_CLEAR_DRAWING: 'trigger-clear-drawing',
+  TRIGGER_UNDO_DRAWING: 'trigger-undo-drawing',
+  TRIGGER_REDO_DRAWING: 'trigger-redo-drawing',
+});
+
+function subscribe(channel, callback, selectArgs = (...args) => args[0]) {
+  const subscription = (event, ...args) => callback(selectArgs(...args));
+  ipcRenderer.on(channel, subscription);
+  return () => ipcRenderer.removeListener(channel, subscription);
+}
+
 contextBridge.exposeInMainWorld('electronAPI', {
   // 設定の更新をメインプロセスへ送信 (設定画面 -> メイン)
-  updateConfig: (config) => ipcRenderer.send('update-config', config),
+  updateConfig: (config) => ipcRenderer.send(channels.UPDATE_CONFIG, config),
   
   // 設定の更新をメインプロセスから受信 (メイン -> 各画面)
-  onConfigUpdate: (callback) => {
-    const subscription = (event, config) => callback(config);
-    ipcRenderer.on('config-updated', subscription);
-    return () => ipcRenderer.removeListener('config-updated', subscription);
-  },
+  onConfigUpdate: (callback) => subscribe(channels.CONFIG_UPDATED, callback),
 
   // 初期設定の取得
-  getConfig: () => ipcRenderer.invoke('get-config'),
+  getConfig: () => ipcRenderer.invoke(channels.GET_CONFIG),
 
   // グローバルマウスイベントの受信
-  onGlobalMouse: (callback) => {
-    const subscription = (event, data) => callback(data);
-    ipcRenderer.on('global-mouse', subscription);
-    return () => ipcRenderer.removeListener('global-mouse', subscription);
-  },
+  onGlobalMouse: (callback) => subscribe(channels.GLOBAL_MOUSE, callback),
 
   // グローバルキーイベントの受信
-  onGlobalKey: (callback) => {
-    const subscription = (event, data) => callback(data);
-    ipcRenderer.on('global-key', subscription);
-    return () => ipcRenderer.removeListener('global-key', subscription);
-  },
+  onGlobalKey: (callback) => subscribe(channels.GLOBAL_KEY, callback),
 
   // オーバーレイウィンドウのマウス透過設定切り替え (オーバーレイ -> メイン)
-  setIgnoreMouseEvents: (ignore, options) => ipcRenderer.send('set-ignore-mouse-events', ignore, options),
+  setIgnoreMouseEvents: (ignore, options) => ipcRenderer.send(channels.SET_IGNORE_MOUSE_EVENTS, ignore, options),
 
   // 手書きのクリアシグナル (メイン -> オーバーレイ)
-  onClearDrawing: (callback) => {
-    const subscription = (event, all) => callback(all);
-    ipcRenderer.on('clear-drawing', subscription);
-    return () => ipcRenderer.removeListener('clear-drawing', subscription);
-  },
+  onClearDrawing: (callback) => subscribe(channels.CLEAR_DRAWING, callback),
   
   // 手書きクリアシグナルの送信 (設定 -> メイン -> オーバーレイ)
-  triggerClearDrawing: (all = false) => ipcRenderer.send('trigger-clear-drawing', all),
+  triggerClearDrawing: (all = false) => ipcRenderer.send(channels.TRIGGER_CLEAR_DRAWING, all),
 
   // 手書きのアンドゥシグナル (メイン -> オーバーレイ)
-  onUndoDrawing: (callback) => {
-    const subscription = () => callback();
-    ipcRenderer.on('undo-drawing', subscription);
-    return () => ipcRenderer.removeListener('undo-drawing', subscription);
-  },
+  onUndoDrawing: (callback) => subscribe(channels.UNDO_DRAWING, callback),
   
   // 手書きのアンドゥ送信 (設定 -> メイン -> オーバーレイ)
-  triggerUndoDrawing: () => ipcRenderer.send('trigger-undo-drawing'),
+  triggerUndoDrawing: () => ipcRenderer.send(channels.TRIGGER_UNDO_DRAWING),
 
   // 手書きのリドゥシグナル (メイン -> オーバーレイ)
-  onRedoDrawing: (callback) => {
-    const subscription = () => callback();
-    ipcRenderer.on('redo-drawing', subscription);
-    return () => ipcRenderer.removeListener('redo-drawing', subscription);
-  },
+  onRedoDrawing: (callback) => subscribe(channels.REDO_DRAWING, callback),
 
   // 手書きのリドゥ送信 (設定 -> メイン -> オーバーレイ)
-  triggerRedoDrawing: () => ipcRenderer.send('trigger-redo-drawing'),
+  triggerRedoDrawing: () => ipcRenderer.send(channels.TRIGGER_REDO_DRAWING),
 
   // 設定画面のホバー状態を通知 (設定 -> メイン)
-  setSettingsHover: (isHovered) => ipcRenderer.send('set-settings-hover', isHovered),
+  setSettingsHover: (isHovered) => ipcRenderer.send(channels.SET_SETTINGS_HOVER, isHovered),
 
   // 設定画面のアクティブ状態の同期を受信 (メイン -> オーバーレイ)
-  onSettingsStateChanged: (callback) => {
-    const subscription = (event, active) => callback(active);
-    ipcRenderer.on('settings-state-changed', subscription);
-    return () => ipcRenderer.removeListener('settings-state-changed', subscription);
-  },
+  onSettingsStateChanged: (callback) => subscribe(channels.SETTINGS_STATE_CHANGED, callback),
 
   // 画面キャプチャの要求
-  captureScreen: () => ipcRenderer.invoke('capture-screen'),
+  captureScreen: () => ipcRenderer.invoke(channels.CAPTURE_SCREEN),
 
   // グローバルホイールイベントの受信
-  onGlobalWheel: (callback) => {
-    const subscription = (event, data) => callback(data);
-    ipcRenderer.on('global-wheel', subscription);
-    return () => ipcRenderer.removeListener('global-wheel', subscription);
-  },
+  onGlobalWheel: (callback) => subscribe(channels.GLOBAL_WHEEL, callback),
 });
