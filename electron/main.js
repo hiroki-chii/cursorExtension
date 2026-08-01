@@ -47,7 +47,7 @@ function updateSettingsState() {
       // 通常時は設定内容に合わせたデフォルトの透過状態を設定する。
       // トリガーキーによる一時的な透過解除はオーバーレイ側で動的に行うため、ここでは上書きしない
       const isAreaSelecting = config.areaSpotlight && config.areaSpotlight.enabled && !config.areaSpotlight.rect;
-      const ignoreMouse = !config.pen.enabled && !isAreaSelecting;
+      const ignoreMouse = !config.pen.enabled && !isAreaSelecting && !config.zoom.enabled;
       overlayWindow.setIgnoreMouseEvents(ignoreMouse, { forward: ignoreMouse });
     }
   }
@@ -223,7 +223,7 @@ function notifyConfigUpdate() {
       overlayWindow.setIgnoreMouseEvents(true, { forward: true });
     } else {
       const isAreaSelecting = config.areaSpotlight && config.areaSpotlight.enabled && !config.areaSpotlight.rect;
-      const ignoreMouse = !config.pen.enabled && !isAreaSelecting;
+      const ignoreMouse = !config.pen.enabled && !isAreaSelecting && !config.zoom.enabled;
       overlayWindow.setIgnoreMouseEvents(ignoreMouse, { forward: ignoreMouse });
     }
   }

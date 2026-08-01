@@ -3,6 +3,7 @@ import { recognizeGesture } from './gestureRecognizer';
 import { createDrawingHistory } from './drawingHistory';
 import { isOverlayInteractive } from './interactionPolicy';
 import { subscribeOverlayEvents } from './electronSubscriptions';
+import { moveZoomCenter } from './zoomTransform';
 import {
   drawAreaSpotlight,
   drawGesture,
@@ -79,6 +80,9 @@ export default function App() {
   const [captureUrl, setCaptureUrl] = useState(null);
   const captureImageRef = useRef(null);
   const zoomScaleRef = useRef(2.0);
+  const zoomCenterRef = useRef({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+  const zoomDragRef = useRef(null);
+  const [isDraggingZoom, setIsDraggingZoom] = useState(false);
 
   // 手書きトリガーキーの押下状態
   const [isTriggerKeyPressed, setIsTriggerKeyPressed] = useState(false);
@@ -92,7 +96,7 @@ export default function App() {
     }
   }, [isSettingsActive]);
 
-  // ペンモードの有効/無効切り替え時に描画状態およびトリガー状態をリセット
+  // 入力モード切り替え時に描画状態とオーバーレイの透過状態を同期
   useEffect(() => {
     isDrawingRef.current = false;
     currentStrokeRef.current = null;
@@ -109,12 +113,19 @@ export default function App() {
         penEnabled: config.pen?.enabled,
         areaSelecting: isAreaSelecting,
         recordingGesture: isRecordingGestureRef.current,
+        zoomEnabled: config.zoom?.enabled,
       });
       if (window.electronAPI) {
         window.electronAPI.setIgnoreMouseEvents(!updatedIsInteractive, { forward: !updatedIsInteractive });
       }
     }
-  }, [config?.pen?.enabled]);
+  }, [
+    config?.pen?.enabled,
+    config?.zoom?.enabled,
+    config?.areaSpotlight?.enabled,
+    config?.areaSpotlight?.rect,
+    isSettingsActive,
+  ]);
 
   useEffect(() => {
     if (window.electronAPI) {
@@ -211,6 +222,7 @@ export default function App() {
                   penEnabled: config.pen?.enabled,
                   areaSelecting: config.areaSpotlight?.enabled && !config.areaSpotlight?.rect,
                   recordingGesture: false,
+                  zoomEnabled: config.zoom?.enabled,
                 });
                 window.electronAPI.setIgnoreMouseEvents(!updatedIsInteractive, { forward: !updatedIsInteractive });
               }
@@ -294,6 +306,7 @@ export default function App() {
                 penEnabled: isPenActive,
                 areaSelecting: isAreaSelecting,
                 recordingGesture: isRecordingGestureRef.current,
+                zoomEnabled: config.zoom?.enabled,
               });
               
               if (window.electronAPI) {
@@ -461,6 +474,9 @@ export default function App() {
     if (config?.zoom?.enabled) {
       // 初期倍率にリセット
       zoomScaleRef.current = config.zoom.scale || 2.0;
+      zoomCenterRef.current = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+      zoomDragRef.current = null;
+      setIsDraggingZoom(false);
 
       window.electronAPI.captureScreen().then((dataUrl) => {
         if (dataUrl) {
@@ -475,6 +491,8 @@ export default function App() {
     } else {
       setCaptureUrl(null);
       captureImageRef.current = null;
+      zoomDragRef.current = null;
+      setIsDraggingZoom(false);
     }
   }, [config?.zoom?.enabled, config?.zoom?.scale]);
 
@@ -526,14 +544,9 @@ export default function App() {
         return;
       }
 
-      // 0.2. ジェスチャー軌跡の描画
-      if (isRecordingGestureRef.current && gesturePointsRef.current.length > 1) {
-        drawGesture(ctx, gesturePointsRef.current);
-      }
-
-      // 0.5. カーソル位置を基準とした全画面ズーム描画
+      // 0.5. ドラッグで移動できる全画面ズーム描画
       if (config.zoom?.enabled && captureImageRef.current) {
-        drawZoom(ctx, canvas, captureImageRef.current, mousePosRef.current, zoomScaleRef.current);
+        drawZoom(ctx, canvas, captureImageRef.current, zoomCenterRef.current, zoomScaleRef.current);
       }
 
       // 1. スポットライト
@@ -556,6 +569,12 @@ export default function App() {
 
       // 5. マウス追従インジケータ (ペンモード / エリアスポットライト選択中)
       drawInteractionIndicator(ctx, config, mousePosRef.current, isAreaSelecting);
+
+      // ジェスチャー軌跡は、全画面エフェクトに隠れないよう最後に描画する
+      const gesturePoints = gesturePointsRef.current;
+      if (isRecordingGestureRef.current && gesturePoints.length > 1) {
+        drawGesture(ctx, gesturePoints);
+      }
 
       animationId = requestAnimationFrame(draw);
     };
@@ -610,7 +629,7 @@ export default function App() {
     });
   };
 
-  // 手書き & エリア選択入力ハンドラー
+  // ズーム移動・手書き・エリア選択入力ハンドラー
   const handlePointerDown = (e) => {
     if (contextMenuRef.current.visible) {
       updateContextMenu({ visible: false, x: 0, y: 0 });
@@ -623,6 +642,17 @@ export default function App() {
       const y = e.clientY - rect.top;
       selectionStartRef.current = { x, y };
       setTempRect({ x, y, width: 0, height: 0 });
+      return;
+    }
+
+    if (config?.zoom?.enabled && e.button === 0) {
+      zoomDragRef.current = {
+        pointerId: e.pointerId,
+        x: e.clientX,
+        y: e.clientY,
+      };
+      e.currentTarget.setPointerCapture(e.pointerId);
+      setIsDraggingZoom(true);
       return;
     }
 
@@ -643,6 +673,26 @@ export default function App() {
   };
 
   const handlePointerMove = (e) => {
+    const zoomDrag = zoomDragRef.current;
+    if (zoomDrag && zoomDrag.pointerId === e.pointerId) {
+      const canvas = canvasRef.current;
+      zoomCenterRef.current = moveZoomCenter({
+        centerX: zoomCenterRef.current.x,
+        centerY: zoomCenterRef.current.y,
+        deltaX: e.clientX - zoomDrag.x,
+        deltaY: e.clientY - zoomDrag.y,
+        scale: zoomScaleRef.current,
+        canvasWidth: canvas.width,
+        canvasHeight: canvas.height,
+      });
+      zoomDragRef.current = {
+        ...zoomDrag,
+        x: e.clientX,
+        y: e.clientY,
+      };
+      return;
+    }
+
     if (isAreaSelecting && selectionStartRef.current) {
       const rect = canvasRef.current.getBoundingClientRect();
       const x = e.clientX - rect.left;
@@ -673,7 +723,16 @@ export default function App() {
     }
   };
 
-  const handlePointerUp = () => {
+  const handlePointerUp = (e) => {
+    if (zoomDragRef.current && (!e || zoomDragRef.current.pointerId === e.pointerId)) {
+      if (e?.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+      zoomDragRef.current = null;
+      setIsDraggingZoom(false);
+      return;
+    }
+
     if (isAreaSelecting && selectionStartRef.current) {
       if (tempRect && tempRect.width > 10 && tempRect.height > 10) {
         const updatedConfig = {
@@ -711,12 +770,15 @@ export default function App() {
     penEnabled: isPenActive,
     areaSelecting: isAreaSelecting,
     recordingGesture: isRecordingGesture,
+    zoomEnabled: config?.zoom?.enabled,
   });
 
   let cursorStyle = 'default';
-  if (isPenActive) {
+  if (isAreaSelecting) {
     cursorStyle = 'crosshair';
-  } else if (isAreaSelecting) {
+  } else if (config?.zoom?.enabled) {
+    cursorStyle = isDraggingZoom ? 'grabbing' : 'grab';
+  } else if (isPenActive) {
     cursorStyle = 'crosshair';
   }
 
@@ -732,6 +794,7 @@ export default function App() {
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
+      onPointerCancel={handlePointerUp}
       onContextMenu={handleContextMenu}
     >
       <canvas 

@@ -12,6 +12,7 @@ test('settings window activity keeps the overlay non-interactive', async (t) => 
     penEnabled: true,
     areaSelecting: true,
     recordingGesture: true,
+    zoomEnabled: true,
   }), false);
 });
 
@@ -24,10 +25,12 @@ test('active overlay tools enable interaction only while settings are inactive',
     penEnabled: false,
     areaSelecting: false,
     recordingGesture: false,
+    zoomEnabled: false,
   };
 
   assert.equal(isOverlayInteractive(inactive), false);
   assert.equal(isOverlayInteractive({ ...inactive, penEnabled: true }), true);
   assert.equal(isOverlayInteractive({ ...inactive, areaSelecting: true }), true);
   assert.equal(isOverlayInteractive({ ...inactive, recordingGesture: true }), true);
+  assert.equal(isOverlayInteractive({ ...inactive, zoomEnabled: true }), true);
 });

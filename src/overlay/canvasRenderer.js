@@ -35,11 +35,11 @@ export function drawGesture(ctx, points) {
   ctx.restore();
 }
 
-export function drawZoom(ctx, canvas, image, mousePosition, scale) {
+export function drawZoom(ctx, canvas, image, zoomCenter, scale) {
   if (!image) return;
   const { sx, sy, sw, sh } = calculateZoomSourceRect({
-    cursorX: mousePosition.x,
-    cursorY: mousePosition.y,
+    centerX: zoomCenter.x,
+    centerY: zoomCenter.y,
     scale,
     canvasWidth: canvas.width,
     canvasHeight: canvas.height,
@@ -50,8 +50,8 @@ export function drawZoom(ctx, canvas, image, mousePosition, scale) {
 
   const badgeWidth = 54;
   const badgeHeight = 20;
-  const badgeX = Math.min(canvas.width - badgeWidth - 12, mousePosition.x + 16);
-  const badgeY = Math.min(canvas.height - badgeHeight - 12, mousePosition.y + 16);
+  const badgeX = Math.max(12, canvas.width - badgeWidth - 12);
+  const badgeY = 12;
   ctx.save();
   ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';

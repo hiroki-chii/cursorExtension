@@ -193,7 +193,7 @@ export function DrawingSettings({ config, updateConfig, onUndo, onRedo, onClear 
                   </div>
                   <div>
                     <h3 className="font-bold text-slate-800 dark:text-slate-100">全画面ズーム機能</h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">カーソル位置を基準に画面全体を拡大します。ONの時にホイール回転で倍率を変更できます</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">画面全体を拡大し、左ドラッグで表示位置を移動できます。ONの時にホイール回転で倍率を変更できます</p>
                   </div>
                 </div>
                 <Switch
@@ -206,7 +206,7 @@ export function DrawingSettings({ config, updateConfig, onUndo, onRedo, onClear 
                 <div className="p-3 bg-indigo-50 dark:bg-indigo-950/20 text-indigo-800 dark:text-indigo-200 rounded-xl text-xs flex gap-2 items-start mb-4">
                   <Info className="h-4 w-4 flex-shrink-0 mt-0.5" />
                   <div>
-                    ズームモードがONの時、マウスホイールを回すことでズームイン（奥へスクロール）およびズームアウト（手前へスクロール）が行えます。
+                    ズームモードがONの時、左ドラッグで表示位置を移動できます。マウスホイールを回すとズームイン（奥へスクロール）およびズームアウト（手前へスクロール）が行えます。
                     （Escキーでズームを解除できます）
                   </div>
                 </div>

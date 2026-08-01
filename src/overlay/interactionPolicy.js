@@ -3,7 +3,8 @@ export function isOverlayInteractive({
   penEnabled,
   areaSelecting,
   recordingGesture,
+  zoomEnabled,
 }) {
   if (settingsActive) return false;
-  return Boolean(penEnabled || areaSelecting || recordingGesture);
+  return Boolean(penEnabled || areaSelecting || recordingGesture || zoomEnabled);
 }
