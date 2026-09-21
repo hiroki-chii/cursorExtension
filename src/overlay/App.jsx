@@ -74,7 +74,12 @@ export default function App() {
 
   // エリアスポットライト選択用のステート/Ref
   const selectionStartRef = useRef(null);
+  const tempRectRef = useRef(null);
   const [tempRect, setTempRect] = useState(null);
+
+  useEffect(() => {
+    tempRectRef.current = tempRect;
+  }, [tempRect]);
 
   // ズーム用のステート/Ref
   const [captureUrl, setCaptureUrl] = useState(null);
@@ -553,7 +558,7 @@ export default function App() {
       drawSpotlight(ctx, canvas, config.spotlight, mousePosRef.current);
 
       // 1.5. エリアスポットライト（矩形・ドラッグ選択）
-      drawAreaSpotlight(ctx, canvas, config.areaSpotlight, tempRect);
+      drawAreaSpotlight(ctx, canvas, config.areaSpotlight, tempRectRef.current);
 
       // 2. 手書きペン
       const committedStrokes = drawingHistoryRef.current.getStrokes();

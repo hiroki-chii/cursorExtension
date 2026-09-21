@@ -67,8 +67,9 @@ PresenterCursorは、プレゼンテーション、デモンストレーショ�
 ## 🛠️ 開発とビルド手順
 
 ### 必要な環境
-- Node.js (Vite + Electron)
-- Windows OS (グローバルインプット監視に `uiohook-napi` を使用しています)
+- Node.js (Vite)
+- Rust/Cargo と Tauri CLI 2
+- Windows OS (低レベルのグローバル入力フックを使用)
 
 ### 1. 依存関係のインストール
 ```bash
@@ -76,21 +77,23 @@ npm install
 ```
 
 ### 2. 開発モードでの起動
-フロントエンドのローカルサーバーとElectronメインプロセスが同時に立ち上がります。
+Viteの開発サーバーを起動し、Tauriウィンドウを開きます。
 ```bash
-npm run electron:dev
+npm run tauri:dev
 ```
+開発モードでは起動元のターミナルがプロセス管理を行うため、ターミナルを閉じるとアプリも終了します。
 
 ### 3. アプリケーションのパッケージング（ビルド）
-ビルドが完了すると、`dist-electron` ディレクトリ内にインストール不要でダブルクリックするだけで使えるポータブル実行ファイル (`PresenterCursor 1.1.0.exe`) が生成されます。
+Windows向けNSISインストーラーを生成します。
 ```bash
-npm run electron:build
+npm run tauri:build
 ```
-※ アプリアイコンやトレイ用アイコンは、ビルド時に `scripts/make-ico.js` によって自動作成・更新されます。
+生成物は `src-tauri/target/release/bundle/nsis/` に出力されます。
+ビルド後にターミナルを表示せず起動する場合は `start-app.vbs` を実行してください。
 
 ---
 
 ## ⚙️ 技術スタック
-- **Core**: Electron, React, Vite
+- **Core**: Tauri 2, Rust, React, Vite
 - **Styling**: Tailwind CSS
-- **OS Input Hooks**: `uiohook-napi`
+- **OS Input Hooks**: Windows low-level hooks (`WH_MOUSE_LL` / `WH_KEYBOARD_LL`)
