@@ -1,21 +1,53 @@
 use crate::{app_state::AppState, config::model::Config, events};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DisplayBounds {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl DisplayBounds {
+    pub fn union(displays: impl IntoIterator<Item = Self>) -> Option<Self> {
+        displays.into_iter().reduce(|a, b| {
+            let x = a.x.min(b.x);
+            let y = a.y.min(b.y);
+            let right =
+                (i64::from(a.x) + i64::from(a.width)).max(i64::from(b.x) + i64::from(b.width));
+            let bottom =
+                (i64::from(a.y) + i64::from(a.height)).max(i64::from(b.y) + i64::from(b.height));
+            Self {
+                x,
+                y,
+                width: (right - i64::from(x)) as u32,
+                height: (bottom - i64::from(y)) as u32,
+            }
+        })
+    }
+}
+
 pub fn configure_overlay(app: &AppHandle) -> Result<(), String> {
     let Some(overlay) = app.get_webview_window("overlay") else {
         return Err("overlay window is missing".into());
     };
-    if let Some(monitor) = overlay
-        .primary_monitor()
-        .map_err(|error| error.to_string())?
-    {
-        overlay
-            .set_position(tauri::Position::Physical(*monitor.position()))
-            .map_err(|error| error.to_string())?;
-        overlay
-            .set_size(tauri::Size::Physical(*monitor.size()))
-            .map_err(|error| error.to_string())?;
-    }
+    let monitors = overlay
+        .available_monitors()
+        .map_err(|error| error.to_string())?;
+    let bounds = DisplayBounds::union(monitors.iter().map(|monitor| DisplayBounds {
+        x: monitor.position().x,
+        y: monitor.position().y,
+        width: monitor.size().width,
+        height: monitor.size().height,
+    }))
+    .ok_or_else(|| "no monitors found".to_string())?;
+    overlay
+        .set_position(tauri::PhysicalPosition::new(bounds.x, bounds.y))
+        .map_err(|error| error.to_string())?;
+    overlay
+        .set_size(tauri::PhysicalSize::new(bounds.width, bounds.height))
+        .map_err(|error| error.to_string())?;
     overlay
         .set_always_on_top(true)
         .map_err(|error| error.to_string())?;
@@ -102,6 +134,40 @@ pub fn interaction_is_enabled(config: &Config, settings_active: bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn desktop_bounds_cover_negative_origins_and_unequal_displays() {
+        let main = DisplayBounds {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1080,
+        };
+        let left = DisplayBounds {
+            x: -2560,
+            y: -360,
+            width: 2560,
+            height: 1440,
+        };
+        let above = DisplayBounds {
+            x: 400,
+            y: -1560,
+            width: 1920,
+            height: 1200,
+        };
+        assert_eq!(
+            DisplayBounds::union([main, left, above]),
+            Some(DisplayBounds {
+                x: -2560,
+                y: -1560,
+                width: 4880,
+                height: 2640,
+            })
+        );
+        assert_eq!(DisplayBounds::union([main]), Some(main));
+        assert_eq!(DisplayBounds::union([]), None);
+    }
+
     #[test]
     fn settings_activity_always_disables_interaction() {
         let mut config = Config::default();

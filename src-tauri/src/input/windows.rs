@@ -55,8 +55,32 @@ pub struct InputHook {
     join: Option<JoinHandle<()>>,
 }
 
+#[derive(Clone, Copy)]
+struct OverlaySurface {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    scale: f64,
+}
+
+impl Default for OverlaySurface {
+    fn default() -> Self {
+        Self {
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0,
+            scale: 1.0,
+        }
+    }
+}
+
 impl InputHook {
     pub fn start(app: AppHandle) -> Result<Self, String> {
+        // Read window geometry on Tauri's setup thread and keep it stable for the
+        // high-frequency hook dispatcher, which runs on a background thread.
+        let surface = overlay_surface(&app);
         let (tx, rx) = mpsc::channel();
         let _ = MOUSE_SENDER.set(tx.clone());
         let _ = KEY_SENDER.set(tx.clone());
@@ -79,8 +103,19 @@ impl InputHook {
                 while let Ok(event) = rx.recv() {
                     match event {
                         RawInput::Mouse { kind, x, y, button } => {
-                            let point = display_point(&app, x, y);
-                            let mut payload = json!({ "type": kind, "x": point.0, "y": point.1 });
+                            let mut payload = json!({
+                                "type": kind,
+                                // Keep the legacy logical coordinates available if the
+                                // WebView cannot provide its viewport dimensions.
+                                "x": (f64::from(x) - f64::from(surface.x)) / surface.scale,
+                                "y": (f64::from(y) - f64::from(surface.y)) / surface.scale,
+                                "screenX": x,
+                                "screenY": y,
+                                "originX": surface.x,
+                                "originY": surface.y,
+                                "surfaceWidth": surface.width,
+                                "surfaceHeight": surface.height
+                            });
                             if let Some(button) = button {
                                 payload["button"] = json!(button);
                             }
@@ -138,18 +173,23 @@ fn key_down(key: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY) -> bo
     unsafe { GetAsyncKeyState(key.0 as i32) < 0 }
 }
 
-fn display_point(app: &AppHandle, x: i32, y: i32) -> (i32, i32) {
+fn overlay_surface(app: &AppHandle) -> OverlaySurface {
     if let Some(window) = app.get_webview_window("overlay") {
-        if let Ok(Some(monitor)) = window.primary_monitor() {
-            let scale = monitor.scale_factor();
-            let position = monitor.position();
-            return (
-                ((x as f64 / scale).round() as i32) - position.x,
-                ((y as f64 / scale).round() as i32) - position.y,
-            );
+        if let (Ok(position), Ok(size), Ok(scale)) = (
+            window.inner_position(),
+            window.inner_size(),
+            window.scale_factor(),
+        ) {
+            return OverlaySurface {
+                x: position.x,
+                y: position.y,
+                width: size.width,
+                height: size.height,
+                scale,
+            };
         }
     }
-    (x, y)
+    OverlaySurface::default()
 }
 
 unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {

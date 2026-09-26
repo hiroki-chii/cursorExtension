@@ -192,6 +192,15 @@ export default function App() {
 
       // グローバルマウスイベントの同期
       const handleGlobalMouse = (e) => {
+        // Convert the hook's physical desktop coordinates using the actual WebView
+        // viewport size. This keeps the effect aligned when Windows DPI differs.
+        if (e.surfaceWidth > 0 && e.surfaceHeight > 0) {
+          e = {
+            ...e,
+            x: (e.screenX - e.originX) * window.innerWidth / e.surfaceWidth,
+            y: (e.screenY - e.originY) * window.innerHeight / e.surfaceHeight,
+          };
+        }
         const config = configRef.current;
         if (isSettingsActiveRef.current) return;
 
